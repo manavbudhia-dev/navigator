@@ -36,6 +36,7 @@ async function getActiveTabId(): Promise<number> {
 
 function toContentMessage(message: BackgroundMessage): ContentMessage {
   if (message.kind === 'ping-active-tab') return { kind: 'ping' }
+  if (message.kind === 'act-active-tab') return { kind: 'act', action: message.action }
   if (message.includeOffViewport === undefined) return { kind: 'get-page-state' }
   return { kind: 'get-page-state', includeOffViewport: message.includeOffViewport }
 }

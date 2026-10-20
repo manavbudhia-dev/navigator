@@ -1,3 +1,4 @@
+import { performAct } from './actions'
 import { buildPageState } from './perception/pageState'
 import {
   isContentMessage,
@@ -8,8 +9,7 @@ import { DEFAULT_PAGE_STATE_OPTIONS } from '@/types/pageState'
 
 /**
  * Content script — perception + action performer.
- * Batch 2 adds the full Page State snapshot; action execution arrives in
- * Batch 4.
+ * Batch 2 added the full Page State snapshot; Batch 4 adds action execution.
  */
 
 function readPageMeta(): PageMeta {
@@ -30,17 +30,19 @@ function readPageMeta(): PageMeta {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isContentMessage(message)) return false
 
+  let response: ContentResponse
   if (message.kind === 'ping') {
-    const response: ContentResponse = { ok: true, meta: readPageMeta() }
-    sendResponse(response)
-    return false
+    response = { ok: true, meta: readPageMeta() }
+  } else if (message.kind === 'act') {
+    response = performAct(message.action)
+  } else {
+    const pageState = buildPageState(document, {
+      ...DEFAULT_PAGE_STATE_OPTIONS,
+      includeOffViewport: message.includeOffViewport ?? DEFAULT_PAGE_STATE_OPTIONS.includeOffViewport,
+    })
+    response = { ok: true, pageState }
   }
 
-  const pageState = buildPageState(document, {
-    ...DEFAULT_PAGE_STATE_OPTIONS,
-    includeOffViewport: message.includeOffViewport ?? DEFAULT_PAGE_STATE_OPTIONS.includeOffViewport,
-  })
-  const response: ContentResponse = { ok: true, pageState }
   sendResponse(response)
   return false
 })
