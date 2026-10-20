@@ -1,0 +1,7 @@
+packages:
+  - '.'
+
+# pnpm blocks dependency build scripts by default. esbuild needs its postinstall
+# to link the platform binary that Vite runs on.
+onlyBuiltDependencies:
+  - esbuild
