@@ -105,8 +105,8 @@ browser. Keys never leave your machine except in direct calls to the endpoint yo
 | ----- | ---------------------------------------------------------------------- | ------ |
 | 1     | Scaffold: Vite + CRXJS + React + TS strict + Tailwind, manifest, side panel shell, service worker, content script, typed message channel | done |
 | 2     | Perception: interactive element map (DOM + shadow DOM + same-origin iframes), multi-strategy selectors, markdown extraction, 4000-token budget | done |
-| 3     | LLM layer: provider abstraction, streaming tool calls, Dexie config store, Settings tab | next |
-| 4     | Tools + safety: registry, executor, action queue, risk scorer, CDP fallback | — |
+| 3     | LLM layer: provider abstraction, streaming tool calls, Dexie config store, Settings tab | done |
+| 4     | Tools + safety: registry, executor, action queue, risk scorer, CDP fallback | next |
 | 5     | Agent loop: planner/executor, loop detection, history compaction, kill switch | — |
 | 6     | Side panel UX: step timeline, approval cards, on-page highlight overlay | — |
 | 7     | Feature A: smart form filler + encrypted profile vault                  | — |
