@@ -49,6 +49,11 @@ export function AgentPanel() {
   const [modeOpen, setModeOpen] = useState(false)
   const [status, setStatus] = useState<ConnectionStatus>('idle')
   const [meta, setMeta] = useState<PageMeta | null>(null)
+  const [perception, setPerception] = useState<{
+    elements: number
+    inViewport: number
+    tokens: number
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -64,10 +69,19 @@ export function AgentPanel() {
     try {
       const message: BackgroundMessage = { kind: 'ping-active-tab' }
       const response = (await chrome.runtime.sendMessage(message)) as BackgroundResponse
-      if (response.ok) {
+      if (response.ok && 'meta' in response) {
         setMeta(response.meta)
         setStatus('connected')
-      } else {
+        const stateMessage: BackgroundMessage = { kind: 'get-page-state-active-tab' }
+        const stateResponse = (await chrome.runtime.sendMessage(stateMessage)) as BackgroundResponse
+        if (stateResponse.ok && 'pageState' in stateResponse) {
+          setPerception({
+            elements: stateResponse.pageState.elementCount,
+            inViewport: stateResponse.pageState.inViewportCount,
+            tokens: stateResponse.pageState.tokenEstimate,
+          })
+        }
+      } else if (!response.ok) {
         setStatus('error')
         setError(response.error)
       }
@@ -316,6 +330,9 @@ export function AgentPanel() {
         {meta ? (
           <p className="mt-2 text-[11px] text-muted-foreground">
             {meta.title} · scrolled {meta.scrollPercent}% · {meta.pageHeightPx}px page
+            {perception
+              ? ` · ${perception.elements} interactive elements (${perception.inViewport} in viewport) · ~${perception.tokens} tokens`
+              : ''}
           </p>
         ) : null}
       </section>

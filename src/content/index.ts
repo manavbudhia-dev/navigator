@@ -1,9 +1,15 @@
-import { isContentMessage, type ContentResponse, type PageMeta } from '@/types/messages'
+import { buildPageState } from './perception/pageState'
+import {
+  isContentMessage,
+  type ContentResponse,
+  type PageMeta,
+} from '@/types/messages'
+import { DEFAULT_PAGE_STATE_OPTIONS } from '@/types/pageState'
 
 /**
  * Content script — perception + action performer.
- * Batch 1 returns page metadata only; the interactive element map, markdown
- * extraction and action execution arrive in Batch 2 and Batch 4.
+ * Batch 2 adds the full Page State snapshot; action execution arrives in
+ * Batch 4.
  */
 
 function readPageMeta(): PageMeta {
@@ -24,7 +30,17 @@ function readPageMeta(): PageMeta {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isContentMessage(message)) return false
 
-  const response: ContentResponse = { ok: true, meta: readPageMeta() }
+  if (message.kind === 'ping') {
+    const response: ContentResponse = { ok: true, meta: readPageMeta() }
+    sendResponse(response)
+    return false
+  }
+
+  const pageState = buildPageState(document, {
+    ...DEFAULT_PAGE_STATE_OPTIONS,
+    includeOffViewport: message.includeOffViewport ?? DEFAULT_PAGE_STATE_OPTIONS.includeOffViewport,
+  })
+  const response: ContentResponse = { ok: true, pageState }
   sendResponse(response)
   return false
 })

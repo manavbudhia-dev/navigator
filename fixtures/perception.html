@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Perception fixture</title>
+  </head>
+  <body>
+    <nav>
+      <a href="/home">Home</a>
+      <a href="/docs">Docs</a>
+    </nav>
+
+    <main>
+      <article>
+        <h1>Quarterly report</h1>
+        <p>
+          Revenue grew again this quarter, see
+          <a href="https://example.com/filing">the filing</a> for the details.
+        </p>
+        <ul>
+          <li>First point about growth</li>
+          <li>Second point about retention</li>
+        </ul>
+      </article>
+
+      <form>
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="you@example.com" />
+        <select id="country">
+          <option>India</option>
+          <option>Germany</option>
+        </select>
+        <textarea id="notes"></textarea>
+        <input id="agree" type="checkbox" />
+        <button type="submit">Send</button>
+        <button type="button" style="display: none">Hidden submit</button>
+        <div aria-hidden="true"><button type="button">Ghost</button></div>
+      </form>
+
+      <div id="shadow-host"></div>
+      <span id="pointer" style="cursor: pointer">Looks clickable</span>
+      <button id="far" style="position: absolute; top: 4000px">Far below</button>
+    </main>
+  </body>
+</html>
