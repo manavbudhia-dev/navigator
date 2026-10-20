@@ -5,22 +5,22 @@
 
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.27 0.015 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.19 262);
+  --card-foreground: oklch(0.27 0.015 265);
+  --primary: oklch(0.546 0.245 262.881);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.965 0.004 265);
+  --secondary-foreground: oklch(0.35 0.015 265);
+  --muted: oklch(0.965 0.004 265);
+  --muted-foreground: oklch(0.55 0.012 265);
+  --accent: oklch(0.965 0.004 265);
+  --accent-foreground: oklch(0.35 0.015 265);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.55 0.19 262);
-  --radius: 0.5rem;
+  --border: oklch(0.925 0.005 265);
+  --input: oklch(0.925 0.005 265);
+  --ring: oklch(0.546 0.245 262.881);
+  --radius: 0.75rem;
 }
 
 .dark {
@@ -85,6 +85,6 @@
       'Segoe UI',
       Roboto,
       sans-serif;
-    font-size: 13px;
+    font-size: 14px;
   }
 }

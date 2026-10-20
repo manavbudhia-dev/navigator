@@ -29,6 +29,7 @@ cp .env.example .env           # optional: build-time default model config
 corepack pnpm dev              # watch mode + HMR for the extension
 corepack pnpm build            # typecheck, then produce dist/
 corepack pnpm test             # unit tests (Vitest)
+node scripts/screenshot.mjs    # headless-Chrome screenshot of the side panel (needs `pnpm dev` running)
 ```
 
 ### Load the extension in Chrome
