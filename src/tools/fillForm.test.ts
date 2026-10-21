@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { coreTools } from './definitions'
 import { ToolRegistry } from './registry'
-import { stubNavigation } from './testUtils'
+import { stubChromeHost } from './testUtils'
 import { emptyProfile } from '@/types/vault'
 import type { ActRequest } from '@/types/actions'
 import type { FormFieldView } from '@/content/formFields'
@@ -102,7 +102,7 @@ function harness(
     async locate() {
       return null
     },
-    ...stubNavigation(),
+    ...stubChromeHost(),
   } satisfies ToolHost
 
   const complete = async (messages: ChatMessage[]): Promise<CompletionResult> => {

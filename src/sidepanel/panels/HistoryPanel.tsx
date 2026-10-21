@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Download, History, RefreshCw } from 'lucide-react'
 
 import { usePricing } from '../usePricing'
+import { MemoryLibrary } from '../components/MemoryLibrary'
 import { RecipeLibrary } from '../components/RecipeLibrary'
 import { SaveRecipeButton } from '../components/SaveRecipe'
 import { saveTextFile, stampedFilename } from '@/lib/download'
@@ -243,6 +244,10 @@ export function HistoryPanel() {
       </section>
 
       <RecipeLibrary refreshKey={libraryRefresh} />
+
+      <div className="border-t pt-4">
+        <MemoryLibrary />
+      </div>
 
       <section className="flex items-center gap-2 border-t pt-3">
         <h2 className="text-[17px] font-bold tracking-tight">Runs</h2>

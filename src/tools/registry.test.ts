@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { coreTools, normalizeUrl } from './definitions'
+import { dataTools } from './dataTools'
 import { ToolRegistry } from './registry'
-import { stubNavigation } from './testUtils'
+import { stubChromeHost } from './testUtils'
 
 import type { ActRequest, ActResult } from '@/types/actions'
 import type { PageState } from '@/types/pageState'
@@ -64,7 +65,7 @@ function fakeContext(calls: Calls, actResult: ActResult = { ok: true, detail: 'C
     async locate() {
       return null
     },
-    ...stubNavigation(),
+    ...stubChromeHost(),
   }
   const controller = new AbortController()
   return { host, tabId: 1, signal: controller.signal }
@@ -104,6 +105,22 @@ describe('ToolRegistry', () => {
     const schema = click.parameters as { type?: string; properties?: Record<string, unknown> }
     expect(schema.type).toBe('object')
     expect(Object.keys(schema.properties ?? {})).toEqual(['index'])
+  })
+
+  it('exposes the data and memory tools with their own schemas', () => {
+    const defs = new ToolRegistry(dataTools()).toToolDefinitions()
+    expect(defs.map((d) => d.name)).toEqual([
+      'extract_structured',
+      'screenshot',
+      'write_file',
+      'download_file',
+      'save_to_memory',
+      'recall_memory',
+    ])
+    const extract = defs.find((d) => d.name === 'extract_structured')!
+    const schema = extract.parameters as { properties?: Record<string, unknown> }
+    expect(Object.keys(schema.properties ?? {})).toEqual(['item', 'fields', 'many'])
+    expect(extract.description).toContain('null')
   })
 
   it('rejects unknown tools and invalid arguments before anything runs', () => {

@@ -9,6 +9,7 @@ import { recordAudit } from '@/safety/audit'
 import { assessRisk } from '@/safety/risk'
 import { decide } from '@/safety/modePolicy'
 import { coreTools } from '@/tools/definitions'
+import { dataTools } from '@/tools/dataTools'
 import { tabTools } from '@/tools/tabTools'
 import { ToolRegistry } from '@/tools/registry'
 import type { AgentMode } from '@/types/agent'
@@ -17,6 +18,7 @@ import type { RiskAssessment } from '@/safety/risk'
 import type { ToolContext, ToolKind } from '@/tools/types'
 
 import { createToolHost, waitForTabComplete } from './host'
+import { memoryApi } from './memoryApi'
 import { createTabOps } from './tabApi'
 import { beginRun, endRun, hooksFor } from './runControl'
 import { broadcast } from './task'
@@ -89,7 +91,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
 
   const config = await loadModelConfig()
   const host = createToolHost()
-  const registry = new ToolRegistry([...coreTools(), ...tabTools()])
+  const registry = new ToolRegistry([...coreTools(), ...tabTools(), ...dataTools()])
   const run = beginRun(`recipe "${recipe.name}"`)
   const { signal } = run.kill
   const hooks = hooksFor((event) => broadcast(event))
@@ -151,6 +153,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
     signal,
     vault,
     tabs: tabOps,
+    memory: memoryApi,
     complete: async (messages, kind) => {
       const result = await complete(
         { messages, ...(kind === 'small' ? { maxTokens: 512 } : {}) },

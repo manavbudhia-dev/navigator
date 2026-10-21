@@ -88,6 +88,27 @@ describe('stepsFromRun', () => {
     expect(steps).toHaveLength(1)
   })
 
+  it('records a download as a step, but not a picture or a note', () => {
+    const steps = stepsFromRun([
+      row({ at: 1, tool: 'download_file', args: { url: 'https://example.com/invoice.pdf', file_name: 'invoice.pdf' } }),
+      row({ at: 2, tool: 'screenshot', args: {} }),
+      row({ at: 3, tool: 'save_to_memory', args: { text: 'the user likes Berlin' } }),
+      row({ at: 4, tool: 'extract_structured', args: { item: 'invoice', fields: ['total'] } }),
+    ])
+    expect(steps).toEqual([
+      {
+        tool: 'download_file',
+        args: { url: 'https://example.com/invoice.pdf', file_name: 'invoice.pdf' },
+        note: '',
+        target: null,
+      },
+    ])
+  })
+
+  it('drops a download row with no url to re-fetch', () => {
+    expect(stepsFromRun([row({ at: 1, tool: 'download_file', args: { file_name: 'a.pdf' } })])).toEqual([])
+  })
+
   it('keeps a page scroll but not one aimed at an element', () => {
     const steps = stepsFromRun([
       row({ at: 1, tool: 'scroll', args: { direction: 'down', amount: 1.5 } }),

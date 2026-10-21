@@ -1,6 +1,7 @@
 import { runAgentTask } from '@/agent/loop'
 import { loadModelConfig } from '@/llm/config'
 import { coreTools } from '@/tools/definitions'
+import { dataTools } from '@/tools/dataTools'
 import { tabTools } from '@/tools/tabTools'
 import { ToolRegistry } from '@/tools/registry'
 import type { ContentMessage } from '@/types/messages'
@@ -9,6 +10,7 @@ import type { AgentMode } from '@/types/agent'
 
 import { createAuditProbe } from './auditApi'
 import { createTabOps } from './tabApi'
+import { memoryApi } from './memoryApi'
 import { createToolHost } from './host'
 import { beginRun, endRun, hooksFor, isRunActive, resolveApproval, resolveQuestion, stopRun } from './runControl'
 import { vault } from './vaultApi'
@@ -68,12 +70,13 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
       mode,
       tabId,
       host: createToolHost(),
-      registry: new ToolRegistry([...coreTools(), ...tabTools()]),
+      registry: new ToolRegistry([...coreTools(), ...tabTools(), ...dataTools()]),
       config,
       hooks,
       signal: run.kill.signal,
       vault,
       tabs: await createTabOps(),
+      memory: memoryApi,
       runId,
       probe: createAuditProbe(tabId),
     })

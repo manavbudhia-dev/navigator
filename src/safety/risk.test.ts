@@ -121,6 +121,24 @@ describe('assessRisk', () => {
     expect(a.hardBlock).toBe('delete-or-confirm')
   })
 
+  it('levels the data tools by where the bytes land', () => {
+    expect(assessRisk({ tool: 'extract_structured', kind: 'read' }).level).toBe('safe')
+    expect(assessRisk({ tool: 'recall_memory', kind: 'read' }).level).toBe('safe')
+    expect(assessRisk({ tool: 'save_to_memory', kind: 'write' }).level).toBe('low')
+    expect(assessRisk({ tool: 'write_file', kind: 'write' }).level).toBe('medium')
+    expect(assessRisk({ tool: 'download_file', kind: 'write' }).level).toBe('high')
+  })
+
+  it('keeps a read safe even when its base risk is not', () => {
+    expect(assessRisk({ tool: 'screenshot', kind: 'read' }).level).toBe('safe')
+  })
+
+  it('still asks before a read that lands in a payment flow', () => {
+    const a = assessRisk({ tool: 'screenshot', kind: 'read', url: 'https://pay.example/checkout' })
+    expect(a.hardBlock).toBe('payment')
+    expect(a.level).toBe('low')
+  })
+
   it('falls back to medium for unknown write tools', () => {
     const a = assessRisk({ tool: 'mystery', kind: 'write' })
     expect(a.level).toBe('medium')

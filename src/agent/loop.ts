@@ -14,7 +14,7 @@ import type { ChatMessage, CompletionRequest, CompletionResult, TokenUsage } fro
 import type { AuditInput } from '@/safety/audit'
 import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
-import type { ToolContext, ToolHost, TabOps, VaultAccess } from '@/tools/types'
+import type { MemoryAccess, ToolContext, ToolHost, TabOps, VaultAccess } from '@/tools/types'
 import type { ToolRegistry } from '@/tools/registry'
 import type { RiskLevel } from '@/safety/risk'
 
@@ -82,6 +82,8 @@ export interface AgentRunOptions {
   vault?: VaultAccess
   /** Passed straight to the tab tools (spec §8). */
   tabs?: TabOps
+  /** Passed straight to the memory tools (spec §4). */
+  memory?: MemoryAccess
   /** Shared by every audit row this run writes (spec §9). */
   runId?: string
   /** Where the action happened and what it looked like afterwards (spec §9). */
@@ -123,6 +125,20 @@ function summarizeArgs(tool: string, args: Record<string, unknown>): string {
     const value = typeof args['value'] === 'string' ? ` "${String(args['value'])}"` : ''
     return `wait for ${String(args['condition'])}${value}`
   }
+  if (tool === 'extract_structured') {
+    const fields = Array.isArray(args['fields']) ? args['fields'].join(', ') : ''
+    return `read "${fields}" off ${args['many'] === true ? 'each' : 'the'} ${String(args['item'])} on the page`
+  }
+  if (tool === 'screenshot') return 'take a picture of the current view'
+  if (tool === 'write_file') {
+    return `save ${String(args['file_name'])} (${String(args['content']).length} characters) into Downloads/Navigator`
+  }
+  if (tool === 'download_file') {
+    const as = typeof args['file_name'] === 'string' ? ` as ${String(args['file_name'])}` : ''
+    return `download ${String(args['url'])}${as} into Downloads/Navigator`
+  }
+  if (tool === 'save_to_memory') return `remember "${String(args['text']).slice(0, 80)}"`
+  if (tool === 'recall_memory') return `look up "${String(args['query']).slice(0, 60)}" in memory`
   return `${tool} ${JSON.stringify(args)}`
 }
 
@@ -168,6 +184,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
     signal,
     ...(options.vault ? { vault: options.vault } : {}),
     ...(options.tabs ? { tabs: options.tabs } : {}),
+    ...(options.memory ? { memory: options.memory } : {}),
     complete: async (messages, kind) => {
       const result = await completeFn(
         { messages, ...(kind === 'small' ? { maxTokens: 512 } : {}) },
@@ -431,8 +448,10 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       }
 
       hooks.emit({ type: 'result', tool: call.name, ok: toolResult.ok, content })
-      // Only an action that could change the page is worth a picture of it (spec §12).
-      const thumb = spec.kind === 'read' ? null : await bestEffort(readThumb)
+      // A screenshot the tool took itself is the picture of this step;
+      // otherwise only an action that could change the page gets one (spec §12).
+      const thumb =
+        toolResult.image ?? (spec.kind === 'read' ? null : await bestEffort(readThumb))
       await recordAudit({
         goal,
         tool: call.name,

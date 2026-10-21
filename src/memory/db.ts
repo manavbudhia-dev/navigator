@@ -119,6 +119,20 @@ export interface RecipeRow {
 }
 
 /**
+ * One thing Navigator decided was worth remembering (spec §4 memory tools).
+ * Plain text, never a secret: the vault holds the sensitive fields, and these
+ * rows are written by the model and read by the user.
+ */
+export interface MemoryRow {
+  id?: number
+  at: number
+  text: string
+  tags: string[]
+  /** The page the note came from, when it came from one. */
+  url: string
+}
+
+/**
  * Local persistence. IndexedDB is available in both the service worker and
  * the side panel, so every context reads the same settings. Later batches
  * add tables for memory entries and recipes here.
@@ -133,6 +147,7 @@ export class NavigatorDB extends Dexie {
   tabIndex!: Table<TabIndexRow, string>
   sessions!: Table<SessionRow, string>
   recipes!: Table<RecipeRow, string>
+  memories!: Table<MemoryRow, number>
 
   constructor() {
     super('navigator')
@@ -189,6 +204,20 @@ export class NavigatorDB extends Dexie {
       tabIndex: 'urlKey, indexedAt',
       sessions: 'id, createdAt',
       recipes: 'id, updatedAt, scheduled',
+    })
+    // Long-term memory (spec §4). `*tags` is a multi-entry index, so a note
+    // tagged in three places is found by a search for any one of them.
+    this.version(8).stores({
+      settings: 'key',
+      audit: '++id, at, tool, runId',
+      vault: 'id, updatedAt',
+      researchRuns: 'id, createdAt',
+      researchNotes: 'id, runId, url',
+      tabStats: 'urlKey, lastSeenAt',
+      tabIndex: 'urlKey, indexedAt',
+      sessions: 'id, createdAt',
+      recipes: 'id, updatedAt, scheduled',
+      memories: '++id, at, *tags',
     })
   }
 }

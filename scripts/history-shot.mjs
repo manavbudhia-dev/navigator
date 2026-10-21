@@ -61,6 +61,16 @@ const seeded = await page.evaluate(async (thumb) => {
   ])
   const { savePricing } = await import('/src/memory/cost.ts')
   await savePricing({ symbol: '₹', inputPerMillion: 100, outputPerMillion: 400 })
+  const { clearMemories, saveMemory } = await import('/src/memory/entries.ts')
+  await clearMemories()
+  await saveMemory(
+    { text: 'She ships only inside India, so checkout asks for a GST number first.', tags: ['checkout', 'gst'], url: 'https://shop.test/checkout' },
+    now - 2 * 60 * min,
+  )
+  await saveMemory(
+    { text: 'The seat map only appears after the page reloads twice.', tags: ['seats'], url: 'https://events.test/seats' },
+    now - 55 * min,
+  )
   return db.audit.count()
 }, PIXEL)
 
@@ -94,6 +104,13 @@ const shots = await page.evaluate(() => {
     moneyCards: cards.filter((t) => /₹\d/.test(t)).length,
     stepSecondsCards: cards.filter((t) => /\d+(\.\d+)?s\/step/.test(t)).length,
     overTarget: document.querySelectorAll('[data-over-target]').length,
+    memoryNotes: document.querySelectorAll('[data-memory] [data-memory-note]').length,
+    memoryTagged: [...document.querySelectorAll('[data-memory] [data-memory-note]')].filter((note) =>
+      (note.textContent ?? '').includes('#gst'),
+    ).length,
+    memorySites: [...document.querySelectorAll('[data-memory] [data-memory-note]')].filter((note) =>
+      /shop\.test|events\.test/.test(note.textContent ?? ''),
+    ).length,
   }
 })
 
@@ -122,6 +139,30 @@ const expanded = await page.evaluate(
 
 await page.screenshot({ path: join(tmpdir(), 'navigator-history.png'), fullPage: true })
 
+// The card is the only place these notes can be read or thrown away.
+await page.evaluate(() => {
+  const input = document.querySelector('[data-memory] input')
+  if (!input) throw new Error('No memory search box')
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+  setter.call(input, 'gst')
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+})
+await new Promise((resolve) => setTimeout(resolve, 250))
+const searched = await page.evaluate(() => document.querySelectorAll('[data-memory] [data-memory-note]').length)
+await page.evaluate(() => {
+  const input = document.querySelector('[data-memory] input')
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+  setter.call(input, '')
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+})
+await new Promise((resolve) => setTimeout(resolve, 250))
+await page.click('[data-memory] [data-memory-note] button[aria-label="Forget this note"]')
+await new Promise((resolve) => setTimeout(resolve, 250))
+const afterForget = await page.evaluate(async () => {
+  const { db } = await import('/src/memory/db.ts')
+  return { rows: await db.memories.count(), shown: document.querySelectorAll('[data-memory] [data-memory-note]').length }
+})
+
 await page.click('nav[aria-label="Sections"] button:nth-child(1)')
 await new Promise((resolve) => setTimeout(resolve, 400))
 await page.screenshot({ path: join(tmpdir(), 'navigator-agent.png'), fullPage: true })
@@ -138,6 +179,9 @@ const checks = {
   costMeterPricesRuns: shots.moneyCards === 1,
   stepSecondsShow: shots.stepSecondsCards === 2,
   slowRunFlagged: shots.overTarget === 1,
+  memoryListed: shots.memoryNotes === 2 && shots.memoryTagged === 1 && shots.memorySites === 2,
+  memorySearchMatches: searched === 1,
+  memoryForgetDeletes: afterForget.rows === 1 && afterForget.shown === 1,
   exportCarriesEvidence:
     exported.app === 'navigator' &&
     exported.rows === 7 &&
@@ -148,7 +192,7 @@ const checks = {
 }
 
 const failed = Object.entries(checks).filter(([, ok]) => !ok)
-console.log(JSON.stringify({ seeded, ...shots, exported, expanded, checks }, null, 2))
+console.log(JSON.stringify({ seeded, ...shots, exported, expanded, searched, afterForget, checks }, null, 2))
 console.log(
   failed.length === 0
     ? 'AUDIT CHECK: PASS'

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { coreTools, pickStoredDocument } from './definitions'
 import { ToolRegistry } from './registry'
-import { stubNavigation } from './testUtils'
+import { stubChromeHost } from './testUtils'
 import { emptyProfile } from '@/types/vault'
 import type { ActRequest } from '@/types/actions'
 import type { PageState } from '@/types/pageState'
@@ -68,7 +68,7 @@ function harness(vault?: VaultAccess): Harness {
     },
     async sleep() {},
     review() {},
-    ...stubNavigation(nav, {
+    ...stubChromeHost(nav, {
       async waitFor(_tabId, condition, value, timeoutMs) {
         waits.push({ condition, value, timeoutMs })
         return { ok: true, detail: `saw ${condition}` }

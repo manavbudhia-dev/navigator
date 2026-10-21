@@ -86,9 +86,10 @@ scripts/             headless-Chrome checks and screenshots for one feature each
 ```
 
 Also under `src/`: `agent/` (planner + executor loop), `llm/` (provider abstraction),
-`tools/` (registry + executor), `memory/` (Dexie + crypto + profile vault + research store),
-`safety/` (risk scorer, guard), `prompts/` (system prompt templates), `forms/` (field classifier +
-fill planner), `research/` (plan → gather → synthesise pipeline, exports and follow-up retrieval),
+`tools/` (registry + executor), `memory/` (Dexie + crypto + profile vault + research store +
+long-term notes), `safety/` (risk scorer, guard), `prompts/` (system prompt templates),
+`forms/` (field classifier + fill planner), `research/` (plan → gather → synthesise pipeline,
+exports and follow-up retrieval), `recipes/` (record a run, replay it without a model, schedule it),
 and `tabs/` (tab manager: command parsing, clustering, duplicates, staleness, memory saver,
 semantic search, sessions and the undo buffer — none of it imports Chrome).
 
@@ -285,6 +286,55 @@ every `<script>` tag in a root-served HTML file into an empty inline-script modu
 
 ---
 
+## Data and memory tools
+
+Six tools that get information out of a page and keep it (`src/tools/dataTools.ts`):
+
+| Tool | What it does |
+| ------------ | -------------------------------------------------------------------- |
+| `extract_structured` | Reads the current page and returns the fields you named, as one record or a list. A second, smaller model call does the reading; the page text is fenced as untrusted data first. |
+| `screenshot` | Photographs the page as Chrome shows it and attaches the picture to that step in the timeline. |
+| `write_file` | Writes text the agent composed (a summary, a CSV, a draft) into `Downloads/Navigator/`. |
+| `download_file` | Saves a file from a URL into `Downloads/Navigator/`. Always asks you first. |
+| `save_to_memory` | Keeps one short note — a preference, a fact it looked up, the shape of a site — for future tasks. |
+| `recall_memory` | Finds those notes again by keyword before the agent asks you for the same thing twice. |
+
+**Extraction says null when the page says nothing.** The prompt forbids guessing, and the parser
+only keeps the keys that were asked for, drops nested values and marks `N/A` / "not stated" as
+unknown, so the result is a set of holes rather than confident invention. Long pages are cut on a
+line boundary and the tool reports how much fell off (`[page text cut after 14,001 of 40,220
+characters]`) instead of pretending it read everything.
+
+**A screenshot is for you, not for the model.** Every provider here sends text-only message content,
+so the picture cannot travel back into the conversation; the tool says so in its own result, and the
+image is stored on the audit row where the History tab can show it. Chrome's capture API also only
+photographs the *visible* tab of a window, which is why the failure message tells the agent to
+`switch_tab` first.
+
+**Files never overwrite and never look executable.** Names are reduced to their last path segment
+with control characters and reserved punctuation stripped, then placed under `Navigator/` inside
+Downloads. `write_file` accepts text extensions only (`.txt`, `.md`, `.csv`, `.json`, `.yaml`,
+`.ics`, …); `download_file` accepts documents, images, media and archives — and refuses `.exe`,
+`.js`, `.html`, `.svg` and anything else that could run. Downloads are relative to the Downloads
+folder by design, so the agent cannot write anywhere else. `download_file` is scored `high` because
+the model chose a URL that puts bytes on your disk, and it is the one data tool recipes record:
+"fetch this month's invoice" is a workflow, a screenshot is not.
+
+**Memory is keyword recall, not embeddings.** `recall_memory` scores each note in the service
+worker — tags ×3, note text ×2, source URL ×1, multiplied by how many of your words it matched, with
+a small recency bonus — so a match is something the agent can be told the reason for, and no model
+call or network round trip is needed to remember. Notes are capped at 600 characters and the library
+at 500 rows, oldest dropped first; writing the same sentence twice refreshes the original instead of
+filling the library with near-duplicates.
+
+**Nothing secret belongs in memory.** `save_to_memory` refuses text that looks like a password,
+card number, CVV, secret or one-time code, and the system prompt tells the agent to ask rather than
+store; sensitive fields live in the encrypted vault. What it does keep is visible: the History tab
+has a **Memory** card that lists every note with its tags, source site and age, searches them with
+the same ranking the tool uses, and lets you delete one note or all of them.
+
+---
+
 ## End-to-end tests
 
 `corepack pnpm test:e2e` runs the three flows the spec names (§13.6) against the real built
@@ -338,8 +388,8 @@ in one browser would fight over it.
 | 9     | Feature C: tab manager                                                  | done |
 | 10    | Recipes, audit log, cost meter, Playwright E2E                          | done |
 | 11a   | Interaction and navigation tools: hover, press_key, select_option, check, upload_file, drag_and_drop, history, open_tab, wait_for | done |
-| 11b   | Data tools: structured extraction, screenshot, file output, long-term memory | next |
-| 11c   | Command palette, keyboard-first navigation, screen-reader announcements | planned |
+| 11b   | Data tools: structured extraction, screenshot, file output, long-term memory | done |
+| 11c   | Command palette, keyboard-first navigation, screen-reader announcements | next |
 
 ## Safety model
 

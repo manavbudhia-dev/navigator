@@ -79,6 +79,15 @@ const BASE_RISK: Record<string, RiskLevel> = {
   wait_for: 'safe',
   // A stored document leaves the machine; Auto mode always asks.
   upload_file: 'high',
+  // Data tools (spec §4). Reading a page and reading memory change nothing;
+  // a file that lands in the Downloads folder is the one that needs you.
+  extract_structured: 'safe',
+  screenshot: 'low',
+  recall_memory: 'safe',
+  save_to_memory: 'low',
+  write_file: 'medium',
+  // Remote bytes written to disk — the model chose the URL, so you decide.
+  download_file: 'high',
 }
 
 const PAYMENT = /\b(checkout|pay now|place order|buy now|purchase|subscribe|proceed to payment)\b|\bcard (number|cvv|details)\b|\bbilling address\b/i

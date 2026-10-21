@@ -41,6 +41,9 @@ const REPLAYABLE = new Set([
   'go_forward',
   'reload',
   'wait_for',
+  // The one data tool worth replaying: "fetch this month's invoice" is a
+  // workflow. A screenshot or a note-to-memory is not.
+  'download_file',
 ])
 
 /** Tools that point at a control, so a missing target means an unusable step. */
@@ -113,6 +116,10 @@ export function stepsFromRun(rows: readonly AuditRow[]): RecipeStep[] {
       args['condition'] = condition
       if (typeof row.args['value'] === 'string') args['value'] = row.args['value']
       if (typeof row.args['timeout_seconds'] === 'number') args['timeout_seconds'] = row.args['timeout_seconds']
+    } else if (row.tool === 'download_file') {
+      if (typeof row.args['url'] !== 'string') continue
+      args['url'] = row.args['url']
+      if (typeof row.args['file_name'] === 'string') args['file_name'] = row.args['file_name']
     } else if (row.tool === 'scroll') {
       // Scrolling one element by index is not a thing a page still has later.
       if (row.args['index'] !== undefined) continue

@@ -1,8 +1,9 @@
 import { cdpAct } from './cdp'
+import { captureScreenshot } from './capture'
 
 import type { ActRequest, ActResult } from '@/types/actions'
 import type { PageState } from '@/types/pageState'
-import type { ToolHost } from '@/tools/types'
+import type { SaveFileRequest, SaveFileResult, ToolHost } from '@/tools/types'
 import type { ContentMessage, ContentResponse } from '@/types/messages'
 
 /**
@@ -31,8 +32,30 @@ export async function waitForTabComplete(tabId: number, timeoutMs = 15_000): Pro
   return false
 }
 
-async function runAct(tabId: number, action: ActRequest): Promise<ActResult> {
-  const result = (await sendToTab(tabId, { kind: 'act', action })) as ActResult
+/**
+ * A download id until Chrome says it finished, gave up, or went quiet.
+ * Resolving with the item is the only way the tool can tell the user where the
+ * file actually landed.
+ */
+function waitForDownload(id: number, timeoutMs = 30_000): Promise<chrome.downloads.DownloadItem | 'interrupted' | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => finish(null), timeoutMs)
+    function finish(result: chrome.downloads.DownloadItem | 'interrupted' | null): void {
+      clearTimeout(timer)
+      chrome.downloads.onChanged.removeListener(onChange)
+      resolve(result)
+    }
+    function onChange(delta: chrome.downloads.DownloadDelta): void {
+      if (delta.id !== id) return
+      const state = delta.state?.current
+      if (state === 'interrupted') finish('interrupted')
+      else if (state === 'complete') void chrome.downloads.search({ id }).then((items) => finish(items[0] ?? null))
+    }
+    chrome.downloads.onChanged.addListener(onChange)
+  })
+}
+
+async function runAct(tabId: number, action: ActRequest): Promise<ActResult> {  const result = (await sendToTab(tabId, { kind: 'act', action })) as ActResult
   if (result.ok && result.fellBack && action.type === 'type') {
     // Contenteditable / rich-text fields: the element is already focused,
     // so trusted key events land in it directly. The control behind the action
@@ -101,6 +124,37 @@ export function createToolHost(): ToolHost {
 
     waitForLoad(tabId, timeoutMs) {
       return waitForTabComplete(tabId, timeoutMs)
+    },
+
+    capture(tabId) {
+      return captureScreenshot(tabId)
+    },
+
+    async saveFile(request): Promise<SaveFileResult> {
+      const source =
+        request.kind === 'text'
+          ? URL.createObjectURL(new Blob([request.text], { type: 'text/plain;charset=utf-8' }))
+          : request.url
+      try {
+        const id = await chrome.downloads.download({
+          url: source,
+          ...(request.fileName === null ? {} : { filename: request.fileName }),
+          saveAs: false,
+          conflictAction: 'uniquify',
+        })
+        if (request.kind === 'text') {
+          // The download needs the blob alive until Chrome has taken it.
+          setTimeout(() => URL.revokeObjectURL(source), 60_000)
+        }
+        const item = await waitForDownload(id)
+        if (item === 'interrupted') {
+          return { ok: false, error: `Chrome interrupted the download of ${request.fileName ?? 'that file'}.` }
+        }
+        return { ok: true, savedAs: item?.filename ?? request.fileName ?? 'the download' }
+      } catch (error) {
+        if (request.kind === 'text') URL.revokeObjectURL(source)
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
 
     review(tabId, indices) {

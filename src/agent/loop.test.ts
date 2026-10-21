@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { coreTools } from '@/tools/definitions'
+import { dataTools } from '@/tools/dataTools'
 import { ToolRegistry } from '@/tools/registry'
-import { stubNavigation } from '@/tools/testUtils'
+import { stubChromeHost } from '@/tools/testUtils'
 import type { AuditInput } from '@/safety/audit'
 import type { ModelConfig } from '@/llm/config'
 import type { CompletionRequest, CompletionResult } from '@/llm/types'
 import type { PageState } from '@/types/pageState'
 import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
-import type { ToolHost } from '@/tools/types'
+import type { ToolHost, ToolSpec } from '@/tools/types'
 
 import { recordAudit } from '@/safety/audit'
 import { runAgentTask, type AgentHooks, type ApprovalRequest, type AuditProbe, type CompleteFn } from './loop'
@@ -78,7 +79,7 @@ function makeHost() {
     async locate() {
       return null
     },
-    ...stubNavigation(),
+    ...stubChromeHost(),
   }
   return { host, acts }
 }
@@ -141,7 +142,7 @@ function run(
   turns: CompletionResult[],
   mode: AgentMode,
   approve = true,
-  evidence: { runId?: string; probe?: AuditProbe } = {},
+  evidence: { runId?: string; probe?: AuditProbe; tools?: ToolSpec[] } = {},
 ) {
   const { host, acts } = makeHost()
   const { hooks, events, approvals, questions } = makeHooks(approve)
@@ -152,7 +153,7 @@ function run(
     mode,
     tabId: 1,
     host,
-    registry: new ToolRegistry(coreTools()),
+    registry: new ToolRegistry(evidence.tools ?? coreTools()),
     config,
     hooks,
     signal: controller.signal,
@@ -389,5 +390,39 @@ describe('runAgentTask', () => {
     const outcome = await promise
     expect(outcome.success).toBe(true)
     expect(auditRows().every((row) => row.url === undefined && row.thumb === undefined)).toBe(true)
+  })
+
+  it('asks before a file lands on the disk, even in Auto mode', async () => {
+    vi.mocked(recordAudit).mockClear()
+    const { promise, approvals } = run(
+      [
+        toolCall('download_file', { url: 'https://example.com/invoice.pdf' }),
+        toolCall('finish', { success: true, summary: 'fetched it' }),
+      ],
+      'auto',
+      true,
+      { tools: [...coreTools(), ...dataTools()] },
+    )
+    await promise
+    expect(approvals).toHaveLength(1)
+    expect(approvals[0]!.level).toBe('high')
+    expect(approvals[0]!.summary).toBe('download https://example.com/invoice.pdf into Downloads/Navigator')
+  })
+
+  it('keeps the picture from a screenshot as the evidence for that step', async () => {
+    vi.mocked(recordAudit).mockClear()
+    const probe: AuditProbe = {
+      url: async () => 'https://shop.test/checkout',
+      thumb: async () => 'data:image/jpeg;base64,PROBE',
+    }
+    const { promise } = run(
+      [toolCall('screenshot', {}), toolCall('finish', { success: true, summary: 'looked at it' })],
+      'auto',
+      true,
+      { probe, tools: [...coreTools(), ...dataTools()] },
+    )
+    await promise
+    // The tab's own capture wins over the routine audit thumbnail.
+    expect(auditRows().find((row) => row.tool === 'screenshot')!.thumb).toBe('data:image/jpeg;base64,AAAA')
   })
 })

@@ -5,6 +5,7 @@ import type { PageState } from '@/types/pageState'
 import type { Profile, ProfileMeta } from '@/types/vault'
 import type { FormFieldView } from '@/content/formFields'
 import type { WaitCondition } from '@/content/waitFor'
+import type { MemoryEntry, NewMemory } from '@/memory/recall'
 import type { ChatMessage, CompletionResult } from '@/llm/types'
 import type { TabIntent, TabReport } from '@/tabs/types'
 
@@ -16,6 +17,20 @@ import type { TabIntent, TabReport } from '@/tabs/types'
 
 export type ToolKind = 'read' | 'write' | 'control'
 
+/** A picture of the tab, taken by Chrome rather than by the page. */
+export interface CaptureResult {
+  dataUrl: string
+  width: number
+  height: number
+}
+
+export type SaveFileRequest =
+  | { kind: 'text'; fileName: string; text: string }
+  /** `fileName` null lets Chrome name the file from the response itself. */
+  | { kind: 'url'; fileName: string | null; url: string }
+
+export type SaveFileResult = { ok: true; savedAs: string } | { ok: false; error: string }
+
 export interface ToolResult {
   ok: boolean
   /** Text returned to the model as the tool message. */
@@ -25,6 +40,11 @@ export interface ToolResult {
    * and recipes see it — never the transcript (spec §11).
    */
   target?: ActTarget
+  /**
+   * A picture this call produced, for the timeline and the audit row. The
+   * transcript stays text: the provider layer has no image parts (spec §4).
+   */
+  image?: string
 }
 
 export interface ToolHost {
@@ -45,6 +65,13 @@ export interface ToolHost {
   waitFor(tabId: number, condition: WaitCondition, value: string, timeoutMs: number): Promise<ActResult>
   /** True when the tab reached "complete" before the timeout ran out. */
   waitForLoad(tabId: number, timeoutMs: number): Promise<boolean>
+  /**
+   * Picture of the tab as Chrome shows it, or null when the tab is not
+   * visible — a screenshot of the wrong window would be a lie.
+   */
+  capture(tabId: number): Promise<CaptureResult | null>
+  /** Write into the user's Downloads/Navigator folder. */
+  saveFile(request: SaveFileRequest): Promise<SaveFileResult>
   sleep(ms: number, signal: AbortSignal): Promise<void>
   /** Draw red "needs you" boxes on the page. Fire and forget. */
   review(tabId: number, indices: number[]): void
@@ -55,6 +82,15 @@ export interface VaultAccess {
   readonly isUnlocked: boolean
   list(): Promise<ProfileMeta[]>
   get(id: string): Promise<Profile | null>
+}
+
+/**
+ * Long-term memory (spec §4). Injected rather than imported so the registry
+ * stays testable without IndexedDB.
+ */
+export interface MemoryAccess {
+  save(input: NewMemory): Promise<MemoryEntry>
+  recall(query: string, limit?: number): Promise<MemoryEntry[]>
 }
 
 /**
@@ -80,6 +116,7 @@ export interface ToolContext {
   complete?(messages: ChatMessage[], kind: 'big' | 'small'): Promise<CompletionResult>
   vault?: VaultAccess
   tabs?: TabOps
+  memory?: MemoryAccess
 }
 
 export interface ToolSpec<S extends z.ZodType = z.ZodType> {
