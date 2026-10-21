@@ -29,6 +29,8 @@ cp .env.example .env           # optional: build-time default model config
 corepack pnpm dev              # watch mode + HMR for the extension
 corepack pnpm build            # typecheck, then produce dist/
 corepack pnpm test             # unit tests (Vitest)
+corepack pnpm typecheck:e2e    # typecheck the Playwright harness
+corepack pnpm test:e2e         # end-to-end: the built extension in Chrome for Testing against a local mock (see End-to-end tests)
 node scripts/screenshot.mjs    # headless-Chrome screenshot of the side panel (needs `pnpm dev` running)
 node scripts/perception-check.mjs  # runs the perception layer on a fixture page in headless Chrome (needs `pnpm dev`)
 node scripts/actions-check.mjs     # runs the action executor (click/type/select/scroll) on the fixture (needs `pnpm dev`)
@@ -78,6 +80,8 @@ src/
   types/             shared, typed message contracts between the three contexts
   lib/               framework-agnostic helpers
   styles/            Tailwind entry point + design tokens
+e2e/                 Playwright flows, the mock server they run against and their page fixtures
+scripts/             headless-Chrome checks and screenshots for one feature each
 ```
 
 Also under `src/`: `agent/` (planner + executor loop), `llm/` (provider abstraction),
@@ -239,6 +243,44 @@ anything. Recorded selectors go to the audit log, never into the model transcrip
 
 ---
 
+## End-to-end tests
+
+`corepack pnpm test:e2e` runs the three flows the spec names (§13.6) against the real built
+extension — real service worker, real content scripts, real IndexedDB, real Chrome tab groups:
+
+| Flow | What it proves |
+| ---- | -------------------------------------------------------------- |
+| Form fill | A task typed into the Agent tab fills the fixture job application from a vault profile, asks for approval first, and leaves the card, CV, password, OTP, consent and CAPTCHA fields untouched. The form is never submitted. |
+| Research | A question becomes a plan, real background tabs, a scraped results page, ranked sources and a cited five-source answer. |
+| Tab grouping | A sentence in the Tabs tab ends with Chrome itself holding the groups. |
+
+Nothing reaches the internet. `e2e/mock-server.mjs` is the whole outside world: the form page, five
+articles, a search results page and an OpenAI-compatible `/v1/chat/completions` that streams a fixed
+script. The Settings tab is driven through the UI to point the extension at that endpoint, so the
+provider layer, the SSE reader and the token accounting all run.
+
+Two things about the harness are deliberate and easy to trip over:
+
+- **Chrome for Testing, not your Chrome.** Since Chrome 137 the ordinary desktop build ignores
+  `--load-extension`, so the run uses the Playwright-managed build:
+  `corepack pnpm exec playwright install chromium` once, before the first run. `NAV_CHROME` points
+  the run at a different binary and `NAV_E2E_HEADED=1` opens a visible window.
+- **Each test gets a throw-away profile**, so vaults, settings and audit rows never leak from one
+  flow into the next, and the side panel is opened as a plain tab
+  (`chrome-extension://<id>/src/sidepanel/index.html`) because Playwright cannot open Chrome's side
+  panel. The full panel UI renders there.
+
+The search engine is stubbed inside the service worker rather than with Playwright routing: routing
+only covers pages Playwright owns, and the research engine creates its own background tabs. The
+five articles are served on five hostnames (`metering.heatpump.test` and friends, mapped to the
+local mock by `--host-resolver-rules`) because the engine keeps at most two pages per domain — a
+single-host corpus could never produce five sources.
+
+The suite runs one worker at a time on purpose: an agent task follows the *active* tab, so two flows
+in one browser would fight over it.
+
+---
+
 ## Roadmap
 
 | Batch | Scope                                                                  | Status |
@@ -252,7 +294,7 @@ anything. Recorded selectors go to the audit log, never into the model transcrip
 | 7     | Feature A: smart form filler + encrypted profile vault                  | done |
 | 8     | Feature B: research engine                                              | done |
 | 9     | Feature C: tab manager                                                  | done |
-| 10    | Recipes, audit log, cost meter, Playwright E2E                          | audit log, cost meter, recipes done · Playwright E2E next |
+| 10    | Recipes, audit log, cost meter, Playwright E2E                          | done |
 
 ## Safety model
 

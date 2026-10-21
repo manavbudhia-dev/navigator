@@ -17,11 +17,29 @@ function searchUrl(query: string): string {
 
 const LOAD_TIMEOUT_MS = 20_000
 const POLL_MS = 150
+/** A finished page can still have no content script: injection is document_idle. */
+const RECEIVER_TIMEOUT_MS = 5_000
 
-async function sendToTab(tabId: number, message: ContentMessage): Promise<ArticlePayload> {
+async function readOnce(tabId: number, message: ContentMessage): Promise<ArticlePayload> {
   const response = (await chrome.tabs.sendMessage(tabId, message)) as ContentResponse
   if (!('article' in response)) throw new Error('The page did not answer the article request.')
   return response.article
+}
+
+/**
+ * Asks the tab for its article, waiting briefly for the content script to
+ * appear. A slow site hides this race, a fast local page does not.
+ */
+async function sendToTab(tabId: number, message: ContentMessage, signal: AbortSignal): Promise<ArticlePayload> {
+  const deadline = Date.now() + RECEIVER_TIMEOUT_MS
+  for (;;) {
+    try {
+      return await readOnce(tabId, message)
+    } catch (error) {
+      if (signal.aborted || Date.now() >= deadline) throw error
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+    }
+  }
 }
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
@@ -77,7 +95,7 @@ export function createResearchHost(): TabResearchHost {
     async search(query, limit, signal) {
       const tabId = await openInBackground(searchUrl(query), signal)
       try {
-        const article = await sendToTab(tabId, { kind: 'get-article' })
+        const article = await sendToTab(tabId, { kind: 'get-article' }, signal)
         return rankHits(article.links, query, limit, { baseUrl: article.url })
       } finally {
         await close(tabId)
@@ -87,7 +105,7 @@ export function createResearchHost(): TabResearchHost {
     async readPage(url, signal): Promise<PageArticle | null> {
       const tabId = await openInBackground(url, signal)
       try {
-        const article = await sendToTab(tabId, { kind: 'get-article' })
+        const article = await sendToTab(tabId, { kind: 'get-article' }, signal)
         const { links: _links, ...page } = article
         return page
       } catch {
