@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 
 import { StatusPill } from '../components/StatusPill'
+import { CostText } from '../components/CostText'
 import { useResearchBridge, type FollowupReply } from '../useResearchBridge'
 import { saveTextFile } from '@/lib/download'
 import { layoutAnswer, type SentencePart } from '@/research/citations'
@@ -306,9 +307,10 @@ export function ResearchPanel() {
                 {result.depth} · {result.sources.length} sources · {result.rounds} round
                 {result.rounds === 1 ? '' : 's'}
               </span>
-              <span className="ml-auto text-[10px] text-muted-foreground">
-                ~{result.promptTokens + result.completionTokens} tokens
-              </span>
+              <CostText
+                usage={result}
+                className="ml-auto text-[10px] text-muted-foreground"
+              />
             </div>
 
             <div className="flex flex-col gap-1.5 text-[13px] leading-snug">
@@ -702,7 +704,7 @@ function FeedRow({ event }: { event: ResearchEvent }) {
         <div className="mt-1 font-semibold">
           <Sparkle className="mr-1 inline size-3.5 text-primary" fill="currentColor" strokeWidth={0} aria-hidden />
           {event.result.sources.length} sources kept · {event.result.citations.length} citations ·{' '}
-          ~{event.result.promptTokens + event.result.completionTokens} tokens
+          <CostText usage={event.result} />
         </div>
       )
     case 'failed':

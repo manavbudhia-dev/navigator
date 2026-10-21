@@ -55,12 +55,17 @@ const seeded = await page.evaluate(async (thumb) => {
     { ...base, ...shop, thumb, at: now - 39 * min, goal: find, tool: 'type_text', risk: 'low', detail: 'Typed "chrome extension boilerplate" into search', ms: 240 },
     { ...base, ...shop, at: now - 38 * min, goal: find, tool: 'click', risk: 'low', detail: 'Clicked Search button', ms: 95, promptTokens: 2100, completionTokens: 40 },
     { ...base, ...shop, at: now - 37 * min, goal: find, tool: 'finish', detail: 'Compared 3 repos by stars', promptTokens: 1500, completionTokens: 210 },
-    { ...base, ...book, thumb, at: now - 6 * min, goal: seats, tool: 'read_page', detail: 'Page read: 18 elements', ms: 120 },
-    { ...base, ...book, thumb, at: now - 5 * min, goal: seats, tool: 'click', risk: 'high', decision: 'block', hardBlock: 'payment', ok: false, detail: 'Proceed to Payment is a hard block', ms: 0 },
+    { ...base, ...book, thumb, at: now - 6 * min, goal: seats, tool: 'read_page', detail: 'Page read: 18 elements', ms: 3000 },
+    { ...base, ...book, thumb, at: now - 5 * min, goal: seats, tool: 'click', risk: 'high', decision: 'block', hardBlock: 'payment', ok: false, detail: 'Proceed to Payment is a hard block', ms: 4200 },
     { ...base, ...book, at: now - 4 * min, goal: seats, tool: 'ask_user', decision: 'approved', detail: 'Which seat class?' },
   ])
+  const { savePricing } = await import('/src/memory/cost.ts')
+  await savePricing({ symbol: '₹', inputPerMillion: 100, outputPerMillion: 400 })
   return db.audit.count()
 }, PIXEL)
+
+// Reload so the panel reads the price list the way it does on a real open.
+await page.reload({ waitUntil: 'networkidle0' })
 
 // Open the History tab and expand every run.
 await page.click('nav[aria-label="Sections"] button:nth-child(5)')
@@ -75,6 +80,7 @@ await new Promise((resolve) => setTimeout(resolve, 300))
 const shots = await page.evaluate(() => {
   const rows = [...document.querySelectorAll('article li')]
   const text = (rows) => rows.map((row) => row.textContent ?? '')
+  const cards = [...document.querySelectorAll('article')].map((card) => card.textContent ?? '')
   return {
     runs: document.querySelectorAll('article[data-run]').length,
     rows: rows.length,
@@ -85,6 +91,9 @@ const shots = await page.evaluate(() => {
     }).length,
     withSite: text(rows).filter((t) => /shop\.test|events\.test/.test(t)).length,
     withMillis: text(rows).filter((t) => /\d+ ms/.test(t)).length,
+    moneyCards: cards.filter((t) => /₹\d/.test(t)).length,
+    stepSecondsCards: cards.filter((t) => /\d+(\.\d+)?s\/step/.test(t)).length,
+    overTarget: document.querySelectorAll('[data-over-target]').length,
   }
 })
 
@@ -126,6 +135,9 @@ const checks = {
   picturesShow: shots.thumbs === 4 && shots.thumbsDecoded === 4,
   thumbnailOpens: expanded,
   durationsShow: shots.withMillis === 5,
+  costMeterPricesRuns: shots.moneyCards === 1,
+  stepSecondsShow: shots.stepSecondsCards === 2,
+  slowRunFlagged: shots.overTarget === 1,
   exportCarriesEvidence:
     exported.app === 'navigator' &&
     exported.rows === 7 &&

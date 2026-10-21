@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Loader2, Moon, PlugZap, Sun, XCircle } from 'lucide-react'
+import { CheckCircle2, Coins, Loader2, Moon, PlugZap, Sun, XCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { clearPricing, loadPricing, savePricing } from '@/memory/cost'
 import {
   PROVIDER_PRESETS,
   loadModelConfig,
@@ -29,9 +30,26 @@ export function SettingsPanel() {
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [saved, setSaved] = useState(false)
   const [test, setTest] = useState<TestState>({ status: 'idle' })
+  const [price, setPrice] = useState({ symbol: '', input: '', output: '' })
+  const [hasPrice, setHasPrice] = useState(false)
+  const [priceError, setPriceError] = useState<string | null>(null)
 
   useEffect(() => {
     void loadModelConfig().then(setConfig)
+  }, [])
+
+  useEffect(() => {
+    void loadPricing()
+      .catch(() => null)
+      .then((stored) => {
+        if (stored === null) return
+        setPrice({
+          symbol: stored.symbol,
+          input: String(stored.inputPerMillion),
+          output: String(stored.outputPerMillion),
+        })
+        setHasPrice(true)
+      })
   }, [])
 
   function toggleTheme() {
@@ -100,6 +118,46 @@ export function SettingsPanel() {
         message: error instanceof Error ? error.message : 'Connection failed.',
       })
     }
+  }
+
+  function updatePrice(key: 'symbol' | 'input' | 'output', value: string) {
+    setPrice((prev) => ({ ...prev, [key]: value }))
+    setPriceError(null)
+  }
+
+  async function handleSavePrice() {
+    const symbol = price.symbol.trim()
+    const input = Number(price.input)
+    const output = Number(price.output)
+    if (symbol === '' || symbol.length > 3) {
+      setPriceError('A currency symbol is 1 to 3 characters, like $ or ₹.')
+      return
+    }
+    if (
+      price.input.trim() === '' ||
+      price.output.trim() === '' ||
+      !Number.isFinite(input) ||
+      !Number.isFinite(output) ||
+      input < 0 ||
+      output < 0
+    ) {
+      setPriceError('Enter both prices as numbers of 0 or more.')
+      return
+    }
+    try {
+      await savePricing({ symbol, inputPerMillion: input, outputPerMillion: output })
+      setPriceError(null)
+      setHasPrice(true)
+    } catch (error) {
+      setPriceError(error instanceof Error ? error.message : 'Could not save the price.')
+    }
+  }
+
+  async function handleClearPrice() {
+    await clearPricing()
+    setPrice({ symbol: '', input: '', output: '' })
+    setHasPrice(false)
+    setPriceError(null)
   }
 
   if (!config) {
@@ -262,6 +320,85 @@ export function SettingsPanel() {
           <p className="flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400">
             <XCircle className="mt-px size-3.5 shrink-0" aria-hidden />
             {test.message}
+          </p>
+        ) : null}
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-xl border bg-card p-3" data-pricing>
+        <div className="flex items-start gap-2.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+            <Coins className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Cost meter</p>
+            <p className="text-xs text-muted-foreground">
+              Your model&apos;s price per million tokens. Without it the panel counts tokens and
+              never guesses money.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <Field label="Symbol">
+            <input
+              value={price.symbol}
+              onChange={(event) => updatePrice('symbol', event.target.value)}
+              placeholder="$"
+              maxLength={3}
+              aria-label="Currency symbol"
+              className="h-9 w-full rounded-lg border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </Field>
+          <Field label="Input / million">
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={price.input}
+              onChange={(event) => updatePrice('input', event.target.value)}
+              placeholder="0"
+              aria-label="Price per million input tokens"
+              className="h-9 w-full rounded-lg border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </Field>
+          <Field label="Output / million">
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={price.output}
+              onChange={(event) => updatePrice('output', event.target.value)}
+              placeholder="0"
+              aria-label="Price per million output tokens"
+              className="h-9 w-full rounded-lg border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </Field>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSavePrice()}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            {hasPrice ? <CheckCircle2 className="size-4" aria-hidden /> : null}
+            {hasPrice ? 'Price saved' : 'Save price'}
+          </button>
+          {hasPrice ? (
+            <button
+              type="button"
+              onClick={() => void handleClearPrice()}
+              className="h-9 rounded-lg border px-3 text-sm font-medium transition-colors hover:bg-muted"
+            >
+              Stop estimating
+            </button>
+          ) : null}
+        </div>
+
+        {priceError ? (
+          <p className="flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400" role="alert">
+            <XCircle className="mt-px size-3.5 shrink-0" aria-hidden />
+            {priceError}
           </p>
         ) : null}
       </section>

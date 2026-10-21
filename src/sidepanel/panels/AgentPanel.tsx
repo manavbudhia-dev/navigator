@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 
 import { StatusPill, type ConnectionStatus } from '../components/StatusPill'
+import { CostText } from '../components/CostText'
 import { useTaskBridge } from '../useTaskBridge'
 import { formatWhen, loadSessions, type AuditSession } from '@/memory/history'
 import { inExtension } from '@/lib/extension'
@@ -556,8 +557,8 @@ function TimelineRow({ event }: { event: TaskEvent }) {
     case 'done':
       return (
         <div className="mt-1 font-semibold">
-          {event.success ? 'Done' : 'Failed'} — {clip(event.summary)} · {event.steps} steps · ~
-          {event.promptTokens + event.completionTokens} tokens
+          {event.success ? 'Done' : 'Failed'} — {clip(event.summary)} · {event.steps} steps ·{' '}
+          <CostText usage={event} />
         </div>
       )
     case 'failed':

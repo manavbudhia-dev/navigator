@@ -34,6 +34,7 @@ node scripts/perception-check.mjs  # runs the perception layer on a fixture page
 node scripts/actions-check.mjs     # runs the action executor (click/type/select/scroll) on the fixture (needs `pnpm dev`)
 node scripts/overlay-check.mjs     # renders the on-page element map + action highlight in headless Chrome (needs `pnpm dev`)
 node scripts/history-shot.mjs      # audit check + screenshot: seeds the log with urls, durations, screenshots and run ids, exports it as JSON, walks the History + Agent tabs (needs `pnpm dev`)
+node scripts/settings-shot.mjs     # settings check + screenshot: saves a token price, rejects a malformed one, reloads and verifies it stuck (needs `pnpm dev`)
 node scripts/form-check.mjs        # classifies + fills the fixture form end to end in headless Chrome, then asserts the blocked fields stayed empty (needs `pnpm dev`)
 node scripts/profiles-shot.mjs     # walks the Profiles tab: create vault, edit profile, lock, unlock, and screenshots each state (needs `pnpm dev`)
 node scripts/research-check.mjs    # runs the whole research pipeline over fixture pages in headless Chrome: plan, gather, score, synthesise, export, store (needs `pnpm dev`)
@@ -108,6 +109,24 @@ Deliberately **not** requested: `history`, `bookmarks`, `cookies`, `notification
 put a real API key there or commit it. Runtime configuration (base URL, API key, model name,
 temperature, max tokens, context window) is edited in the Settings tab and stored locally in the
 browser. Keys never leave your machine except in direct calls to the endpoint you configured.
+
+## Cost meter
+
+The Settings tab has a **Cost meter** card where you enter your own price per million tokens plus a
+currency symbol (up to 3 characters). Nothing is fetched from a price list, because endpoint pricing
+changes and the extension has no way to verify it.
+
+With no price saved, every readout says `no price set` instead of inventing a `₹0.00`. With a price
+saved you get `≈₹1.90` style estimates on the Agent run summary, Research reports, Tabs reports and
+each History run. Everything is priced at the main model's rate — the summariser and the field-value
+judge use cheaper models, so the estimate deliberately errs high rather than looking better than
+reality.
+
+The same card also flags runs that beat the spec targets (12,000 tokens and 2.5 s per step). History
+shows a run's median step time and lists the steps that overran, so a slow or chatty run is visible
+without opening the log.
+
+Use **Stop estimating** to delete the stored price; the numbers revert to raw token counts.
 
 ## Profile vault and form filling
 

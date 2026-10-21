@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { StatusPill } from '../components/StatusPill'
+import { CostText } from '../components/CostText'
 import { useTabsBridge } from '../useTabsBridge'
 import { deleteSavedSession } from '@/tabs/store'
 import { formatIdle } from '@/tabs/stale'
@@ -256,9 +257,11 @@ export function TabsPanel() {
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold">{report.summary}</h3>
             <span className="ml-auto text-[10px] text-muted-foreground">
-              {report.promptTokens + report.completionTokens > 0
-                ? `~${report.promptTokens + report.completionTokens} tokens`
-                : 'no model used'}
+              {report.promptTokens + report.completionTokens > 0 ? (
+                <CostText usage={report} />
+              ) : (
+                'no model used'
+              )}
             </span>
           </div>
           {report.lines.length > 0 ? (

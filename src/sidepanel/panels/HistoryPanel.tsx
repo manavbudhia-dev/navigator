@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Download, History, RefreshCw } from 'lucide-react'
 
+import { usePricing } from '../usePricing'
 import { saveTextFile, stampedFilename } from '@/lib/download'
+import { formatCost, summarizeRun } from '@/memory/cost'
 import { buildAuditExport } from '@/memory/export'
 import { formatWhen, loadSessions, type AuditSession, type SessionOutcome } from '@/memory/history'
 import { cn } from '@/lib/utils'
@@ -108,7 +110,10 @@ function StepRow({ row }: { row: AuditRow }) {
 
 function SessionCard({ session }: { session: AuditSession }) {
   const [open, setOpen] = useState(false)
+  const pricing = usePricing()
+  const run = useMemo(() => summarizeRun(session.rows, pricing), [session.rows, pricing])
   const site = hostOf(session.rows.find((row) => row.url !== undefined)?.url ?? '')
+  const tokens = run.promptTokens + run.completionTokens
 
   return (
     <article className="rounded-xl border bg-card" data-run={session.runId ?? undefined}>
@@ -125,6 +130,11 @@ function SessionCard({ session }: { session: AuditSession }) {
             {session.blocked > 0 ? ` · ${session.blocked} blocked` : ''}
             {site === '' ? '' : ` · ${site}`} · {clockAt(session.startedAt)} ·{' '}
             {formatWhen(session.startedAt)}
+            {tokens === 0 ? '' : ` · ${tokens} tokens`}
+            {tokens === 0 || run.cost === null || pricing === null
+              ? ''
+              : ` · ${formatCost(run.cost, pricing.symbol)}`}
+            {run.medianStepMs === null ? '' : ` · ${(run.medianStepMs / 1000).toFixed(1)}s/step`}
           </p>
         </div>
         <span
@@ -141,6 +151,11 @@ function SessionCard({ session }: { session: AuditSession }) {
           aria-hidden
         />
       </button>
+      {run.over.length > 0 ? (
+        <p className="border-t px-3 py-2 text-[11px] text-amber-700" role="note" data-over-target>
+          Over the per-step target: {run.over.join(' · ')}
+        </p>
+      ) : null}
       {open ? (
         <ul className="px-3 pb-3">
           {session.rows.map((row, index) => (
