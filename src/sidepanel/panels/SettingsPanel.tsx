@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, Coins, Loader2, Moon, PlugZap, Sun, XCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { nextTheme, type Theme } from '@/lib/theme'
 import { clearPricing, loadPricing, savePricing } from '@/memory/cost'
 import {
   PROVIDER_PRESETS,
@@ -25,8 +26,11 @@ const PROVIDERS: Array<{ id: ProviderId; label: string }> = [
   { id: 'gemini', label: 'Gemini' },
 ]
 
-export function SettingsPanel() {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
+/**
+ * The theme lives in App, not here: the command palette changes it too, and it
+ * is persisted, so two owners would disagree the moment the panel reopens.
+ */
+export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (theme: Theme) => void }) {
   const [config, setConfig] = useState<ModelConfig | null>(null)
   const [saved, setSaved] = useState(false)
   const [test, setTest] = useState<TestState>({ status: 'idle' })
@@ -52,10 +56,10 @@ export function SettingsPanel() {
       })
   }, [])
 
+  const dark = theme === 'dark'
+
   function toggleTheme() {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle('dark', next)
+    onTheme(nextTheme(theme))
   }
 
   function update<K extends keyof ModelConfig>(key: K, value: ModelConfig[K]) {

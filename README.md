@@ -44,6 +44,7 @@ node scripts/research-shot.mjs     # seeds two finished reports and walks the Re
 node scripts/tabs-check.mjs        # runs the tab manager end to end in headless Chrome: commands, grouping, dedupe, staleness, memory, undo, sessions, index (needs `pnpm dev`)
 node scripts/tabs-shot.mjs         # walks the Tabs tab against a fake browser: index, free, merge, search, group, close + undo, stale, selection, sessions (needs `pnpm dev`)
 node scripts/recipes-check.mjs     # recipes check + screenshot: saves a finished run as a recipe from History, replays it with fake tools, self-heals a dead step, schedules it, exports and re-imports the JSON (needs `pnpm dev`)
+node scripts/palette-check.mjs     # keyboard-only run through the command palette in headless Chrome: shortcut, focus, groups, disabled reasons, navigation, theme persistence, live regions (needs `pnpm dev`)
 ```
 
 ### Load the extension in Chrome
@@ -77,6 +78,8 @@ src/
   content/           content script — perception + action performer
   sidepanel/         React UI (Agent | Research | Tabs | Profiles | History | Settings)
     panels/          one component per tab
+    components/       CommandPalette and the shared UI primitives
+  commands/          the palette's command list and matcher — pure, no React
   types/             shared, typed message contracts between the three contexts
   lib/               framework-agnostic helpers
   styles/            Tailwind entry point + design tokens
@@ -335,6 +338,66 @@ the same ranking the tool uses, and lets you delete one note or all of them.
 
 ---
 
+## Command palette
+
+`Ctrl+Shift+K` (`⌘+Shift+K` on a Mac) opens a palette over the whole panel — the keyboard path to
+every part of Navigator (spec §10). The header's search icon and `Alt+1`…`Alt+6` are the other ways
+around: `Alt+1` jumps to Agent, `Alt+2` Research, and so on to Settings. `Escape` closes the palette,
+and when the palette is *not* open, `Escape` stops the running task — the kill switch never needs the
+mouse.
+
+**What is on the list** (`src/sidepanel/commands.ts`, fifteen commands in five groups):
+
+| Group | Commands |
+| ----- | -------- |
+| Task | Run the task you wrote · Stop the running task · Write a new task |
+| Mode | Switch to Observe / Co-pilot / Auto |
+| Go to | Agent, Research, Tabs, Profiles, History, Settings |
+| View | Toggle dark mode · Show or hide the element map on the page |
+| Data | Export the audit log as JSON |
+
+Matching is a small pure function (`src/commands/model.ts`): a hit in the title counts 3, a keyword 2,
+a group name 1, multiplied by how much of what you typed it covered, plus a bonus when a word starts
+the title. So `hist` lands on *Go to History* rather than *Export the audit log*, and the ranking is
+unit-tested without a DOM.
+
+**A command that can't run right now is still on the list, greyed, with the reason** — "Nothing is
+running", "That is the current mode", "Write a task in the Agent tab first". Hiding them would make
+the palette look like it had forgotten features; showing them teaches what exists and why this moment
+isn't the time. `view.overlay` and `data.export-audit` are disabled outside a real Chrome tab, because
+both talk to the page.
+
+**Recipes are deliberately not runnable from the palette.** A replay can raise approval cards and
+needs the bridge the History tab's recipe card owns; launching one from a context that cannot show
+those cards would either silently skip approval or open a panel you are not looking at. Record and
+replay them from History.
+
+**If you typed a goal instead of a command**, the palette offers a synthetic first row —
+`Start task: "find the cheapest 5kW monobloc"` — once the query is longer than a command would
+normally be (6 characters). Pressing Enter on it puts that text in the task box and runs it. The
+palette is a launcher, not a second parser.
+
+**Reaching the shortcut when the panel is closed.** Chrome owns `Ctrl+Shift+K` through the manifest
+`commands` key, which fires globally rather than inside the page. The service worker relays it to the
+panel; if the side panel isn't open yet, Chrome may refuse to open it without a user gesture, so the
+worker tries and the toolbar button stays as the guaranteed path.
+
+**Screen-reader announcements.** Every mode of use here assumes the agent is acting on something you
+cannot see, so the panel speaks as it works. A single always-mounted `role="status"` region reads the
+most recent step ("Running: click Seat class."), because a live region added at the same moment as
+its text is often ignored; the timeline is an ordered list with a label; approval and question cards
+use `role="alert"` so they interrupt; the recent-activity cards became real buttons, reachable by Tab
+and named ("Open the history of find heat pump grants"); and every interactive text box shows a focus
+ring. The palette itself is the standard combobox/listbox pattern — focus stays in the input while
+`aria-activedescendant` points at the highlighted row, so a reader announces the command before you
+commit to it.
+
+**Dark mode persists.** The choice is stored in `chrome.storage.local` (falling back to
+`localStorage` when the panel runs outside Chrome), so a reload, a re-open or a different window all
+come back in the theme you left.
+
+---
+
 ## End-to-end tests
 
 `corepack pnpm test:e2e` runs the three flows the spec names (§13.6) against the real built
@@ -389,7 +452,7 @@ in one browser would fight over it.
 | 10    | Recipes, audit log, cost meter, Playwright E2E                          | done |
 | 11a   | Interaction and navigation tools: hover, press_key, select_option, check, upload_file, drag_and_drop, history, open_tab, wait_for | done |
 | 11b   | Data tools: structured extraction, screenshot, file output, long-term memory | done |
-| 11c   | Command palette, keyboard-first navigation, screen-reader announcements | next |
+| 11c   | Command palette, keyboard-first navigation, screen-reader announcements | done |
 
 ## Safety model
 

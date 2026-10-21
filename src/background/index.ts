@@ -5,6 +5,7 @@ import {
   type BackgroundResponse,
   type ContentMessage,
   type ContentResponse,
+  type PanelCommandMessage,
 } from '@/types/messages'
 
 import { handleVaultRequest } from './vaultApi'
@@ -44,6 +45,25 @@ chrome.runtime.onStartup.addListener(() => {
 
 // The tab manager's last-seen clock: registrations happen once per worker boot.
 startTabWatchers()
+
+/**
+ * The palette's shortcut (spec §10) belongs to Chrome, not to a document, so it
+ * arrives here. An open panel takes the message; with none open we ask for one,
+ * which Chrome only grants when it can tie the call to a user gesture — a key
+ * binding often cannot, so the toolbar button stays the fallback.
+ */
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== 'open-palette') return
+  const message: PanelCommandMessage = { source: 'navigator-command', command }
+  void chrome.runtime.sendMessage(message).catch(() => {
+    void chrome.windows
+      .getLastFocused({ windowTypes: ['normal'] })
+      .then((focused) =>
+        focused.id === undefined ? undefined : chrome.sidePanel.open({ windowId: focused.id }),
+      )
+      .catch(() => undefined)
+  })
+})
 
 async function getActiveTabId(): Promise<number> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })

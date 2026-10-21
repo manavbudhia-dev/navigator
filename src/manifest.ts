@@ -34,6 +34,16 @@ export default defineManifest({
     },
   ],
 
+  // Spec §10: the command palette is one keystroke away, wherever you are in
+  // the browser. Chrome owns this shortcut globally, so the service worker
+  // hears it and tells the panel to open.
+  commands: {
+    'open-palette': {
+      suggested_key: { default: 'Ctrl+Shift+K', mac: 'Command+Shift+K' },
+      description: 'Open the Navigator command palette',
+    },
+  },
+
   permissions: [
     'sidePanel', // primary UI surface
     'storage', // model config, allowlists, audit log

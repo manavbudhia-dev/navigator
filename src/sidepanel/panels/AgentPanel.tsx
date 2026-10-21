@@ -20,19 +20,14 @@ import {
 import { StatusPill, type ConnectionStatus } from '../components/StatusPill'
 import { CostText } from '../components/CostText'
 import { SaveRecipeButton } from '../components/SaveRecipe'
-import { useTaskBridge } from '../useTaskBridge'
+import { latestAnnouncement } from '../announce'
 import { formatWhen, loadSessions, type AuditSession } from '@/memory/history'
 import { inExtension } from '@/lib/extension'
 import { cn } from '@/lib/utils'
-import { AGENT_MODES, MODE_LABELS, type AgentMode } from '@/types/agent'
+import { AGENT_MODES, MODE_DESCRIPTIONS, MODE_LABELS, type AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
 import type { BackgroundMessage, BackgroundResponse, PageMeta } from '@/types/messages'
-
-const MODE_DESCRIPTIONS: Record<AgentMode, string> = {
-  observe: 'Read-only, never acts',
-  copilot: 'Approve important actions',
-  auto: 'Acts alone on allowlisted sites',
-}
+import type { useTaskBridge } from '../useTaskBridge'
 
 const OUTCOME_LABELS: Record<AuditSession['outcome'], string> = {
   success: 'Completed',
@@ -47,12 +42,37 @@ type ActiveTabInfo = {
   favIconUrl?: string | undefined
 }
 
-export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
-  const [goal, setGoal] = useState('')
+/**
+ * The Agent tab. The task bridge, the mode, the goal text and the overlay
+ * switch all come from App, because the command palette changes them too and
+ * two owners would show two different states.
+ */
+interface Props {
+  onOpenHistory: () => void
+  task: ReturnType<typeof useTaskBridge>
+  mode: AgentMode
+  onMode: (mode: AgentMode) => void
+  goal: string
+  onGoal: (goal: string) => void
+  goalRef: React.RefObject<HTMLTextAreaElement>
+  overlayOn: boolean
+  onOverlay: (visible: boolean) => void
+}
+
+export function AgentPanel({
+  onOpenHistory,
+  task,
+  mode,
+  onMode,
+  goal,
+  onGoal,
+  goalRef,
+  overlayOn,
+  onOverlay,
+}: Props) {
   const [expanded, setExpanded] = useState(true)
-  const [mode, setMode] = useState<AgentMode>('copilot')
-  const [modeOpen, setModeOpen] = useState(false)
   const [status, setStatus] = useState<ConnectionStatus>('idle')
+  const [modeOpen, setModeOpen] = useState(false)
   const [meta, setMeta] = useState<PageMeta | null>(null)
   const [perception, setPerception] = useState<{
     elements: number
@@ -62,10 +82,8 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null)
   const [answerDraft, setAnswerDraft] = useState('')
-  const [overlayOn, setOverlayOn] = useState(false)
   const [sessions, setSessions] = useState<AuditSession[]>([])
   const timelineRef = useRef<HTMLOListElement>(null)
-  const task = useTaskBridge()
 
   const runDiagnostics = useCallback(async () => {
     if (!inExtension) {
@@ -139,18 +157,6 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
     if (list) list.scrollTop = list.scrollHeight
   }, [task.events])
 
-  const overlayMessage = useCallback(async (visible: boolean) => {
-    if (!inExtension) return
-    setOverlayOn(visible)
-    try {
-      const message: BackgroundMessage = { kind: 'set-overlay', visible }
-      const response = (await chrome.runtime.sendMessage(message)) as BackgroundResponse
-      if (!response.ok) setOverlayOn(!visible)
-    } catch {
-      setOverlayOn(!visible)
-    }
-  }, [])
-
   async function handleRun() {
     const trimmed = goal.trim()
     if (trimmed.length === 0 || task.running) return
@@ -158,6 +164,7 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
   }
 
   const canSend = goal.trim().length > 0 && !task.running
+  const announcement = latestAnnouncement(task.events)
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -170,12 +177,13 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
 
       <section className="rounded-xl border bg-card p-3">
         <textarea
+          ref={goalRef}
           value={goal}
-          onChange={(event) => setGoal(event.target.value)}
+          onChange={(event) => onGoal(event.target.value)}
           rows={expanded ? 3 : 1}
           placeholder="e.g. Find 3 Chrome extension boilerplates on GitHub and compare their stars..."
           aria-label="Task description"
-          className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+          className="w-full resize-none rounded-md bg-transparent text-sm outline-none placeholder:text-muted-foreground/70 focus-visible:ring-2 focus-visible:ring-ring"
         />
         <div className="mt-2 flex items-center gap-1">
           <button
@@ -259,7 +267,7 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
                       role="option"
                       aria-selected={value === mode}
                       onClick={() => {
-                        setMode(value)
+                        onMode(value)
                         setModeOpen(false)
                       }}
                       className={cn(
@@ -311,7 +319,7 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
       {task.events.length > 0 ? (
         <section className="flex flex-col gap-2">
           {task.approval ? (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3" role="alert">
               <p className="text-sm font-semibold text-amber-900">
                 Approve: {task.approval.summary}
               </p>
@@ -340,7 +348,7 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
           ) : null}
 
           {task.question ? (
-            <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
+            <div className="rounded-xl border border-blue-300 bg-blue-50 p-3" role="alert">
               <p className="text-sm font-semibold text-blue-900">{task.question.question}</p>
               <div className="mt-2 flex gap-2">
                 <input
@@ -371,6 +379,7 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
             </div>
             <ol
               ref={timelineRef}
+              aria-label="Task steps"
               className="flex max-h-72 flex-col gap-1.5 overflow-y-auto border-l border-border pl-3 text-xs"
             >
               {task.events.map((event, index) => (
@@ -465,7 +474,7 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
           </button>
           <button
             type="button"
-            onClick={() => void overlayMessage(!overlayOn)}
+            onClick={() => onOverlay(!overlayOn)}
             disabled={!inExtension}
             aria-pressed={overlayOn}
             title="Number every element the agent can see"
@@ -507,28 +516,38 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
           </p>
         ) : (
           sessions.slice(0, 3).map((session) => (
-            <article
+            <button
               key={session.id}
-              className="flex cursor-pointer items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/50"
+              type="button"
               onClick={onOpenHistory}
+              aria-label={`Open the history of ${clip(session.goal, 60)}`}
+              className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/50"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                 <FileText className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
               </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{clip(session.goal, 60)}</p>
-                <p className="truncate text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{clip(session.goal, 60)}</span>
+                <span className="block truncate text-xs text-muted-foreground">
                   {session.actions} action{session.actions === 1 ? '' : 's'} ·{' '}
                   {formatWhen(session.startedAt)}
-                </p>
-              </div>
+                </span>
+              </span>
               <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
                 {OUTCOME_LABELS[session.outcome]}
               </span>
-            </article>
+            </button>
           ))
         )}
       </section>
+
+      {/* Spoken one sentence at a time (spec §10). It is always mounted: a live
+          region added to the DOM at the same moment as its first text is often
+          not announced. The timeline itself stays out of the way — reading a
+          growing list would repeat every earlier step on each new one. */}
+      <p className="sr-only" role="status" aria-live="polite" data-step-announcement>
+        {announcement}
+      </p>
     </div>
   )
 }

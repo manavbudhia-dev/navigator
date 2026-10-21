@@ -114,3 +114,22 @@ export function isContentMessage(value: unknown): value is ContentMessage {
       value.kind === 'wait-for')
   )
 }
+
+/**
+ * background -> side panel. Chrome owns the global shortcut (manifest
+ * `commands`), so the worker is the one that hears it and tells the open panel
+ * to show the palette (spec §10).
+ */
+export interface PanelCommandMessage {
+  source: 'navigator-command'
+  command: 'open-palette'
+}
+
+export function isPanelCommandMessage(value: unknown): value is PanelCommandMessage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as PanelCommandMessage).source === 'navigator-command' &&
+    (value as PanelCommandMessage).command === 'open-palette'
+  )
+}
