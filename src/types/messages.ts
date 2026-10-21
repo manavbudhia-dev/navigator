@@ -26,6 +26,7 @@ export type BackgroundMessage =
   | { kind: 'stop-task' }
   | { kind: 'approve-action'; id: string; approved: boolean }
   | { kind: 'answer-question'; id: string; answer: string }
+  | { kind: 'set-overlay'; visible?: boolean; highlightIndex?: number }
 
 export type BackgroundResponse =
   | { ok: true; meta: PageMeta }
@@ -39,6 +40,7 @@ export type ContentMessage =
   | { kind: 'ping' }
   | { kind: 'get-page-state'; includeOffViewport?: boolean }
   | { kind: 'act'; action: ActRequest }
+  | { kind: 'overlay'; visible?: boolean; highlightIndex?: number }
 
 export type ContentResponse =
   | { ok: true; meta: PageMeta }
@@ -56,7 +58,8 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
       value.kind === 'run-task' ||
       value.kind === 'stop-task' ||
       value.kind === 'approve-action' ||
-      value.kind === 'answer-question')
+      value.kind === 'answer-question' ||
+      value.kind === 'set-overlay')
   )
 }
 
@@ -65,6 +68,6 @@ export function isContentMessage(value: unknown): value is ContentMessage {
     typeof value === 'object' &&
     value !== null &&
     'kind' in value &&
-    (value.kind === 'ping' || value.kind === 'get-page-state' || value.kind === 'act')
+    (value.kind === 'ping' || value.kind === 'get-page-state' || value.kind === 'act' || value.kind === 'overlay')
   )
 }

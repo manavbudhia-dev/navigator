@@ -1,0 +1,176 @@
+import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, History, RefreshCw } from 'lucide-react'
+
+import { formatWhen, loadSessions, type AuditSession, type SessionOutcome } from '@/memory/history'
+import { cn } from '@/lib/utils'
+import type { AuditRow } from '@/memory/db'
+
+const OUTCOME_STYLES: Record<SessionOutcome, string> = {
+  success: 'bg-green-50 text-green-700',
+  failed: 'bg-red-50 text-red-600',
+  stopped: 'bg-amber-50 text-amber-700',
+  unknown: 'bg-muted text-muted-foreground',
+}
+
+const OUTCOME_LABELS: Record<SessionOutcome, string> = {
+  success: 'Completed',
+  failed: 'Failed',
+  stopped: 'Stopped',
+  unknown: 'No finish',
+}
+
+const DECISION_STYLES: Record<string, string> = {
+  allow: 'bg-muted text-muted-foreground',
+  approved: 'bg-green-50 text-green-700',
+  block: 'bg-red-50 text-red-600',
+  denied: 'bg-red-50 text-red-600',
+}
+
+const RISK_STYLES: Record<string, string> = {
+  safe: 'bg-muted text-muted-foreground',
+  low: 'bg-blue-50 text-blue-700',
+  medium: 'bg-amber-50 text-amber-700',
+  high: 'bg-red-50 text-red-600',
+}
+
+function clockAt(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function clip(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
+}
+
+function StepRow({ row }: { row: AuditRow }) {
+  return (
+    <li className="flex items-start gap-2 border-t py-2 text-xs">
+      <span className="shrink-0 tabular-nums text-muted-foreground">{clockAt(row.at)}</span>
+      <span className="w-20 shrink-0 truncate font-semibold">{row.tool}</span>
+      <span
+        className={cn(
+          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+          RISK_STYLES[row.risk] ?? RISK_STYLES.safe,
+        )}
+      >
+        {row.risk}
+      </span>
+      <span
+        className={cn(
+          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+          DECISION_STYLES[row.decision] ?? DECISION_STYLES.allow,
+        )}
+      >
+        {row.decision}
+        {row.hardBlock ? `: ${row.hardBlock}` : ''}
+      </span>
+      <span className="min-w-0 flex-1 break-words text-muted-foreground">{clip(row.detail, 120)}</span>
+    </li>
+  )
+}
+
+function SessionCard({ session }: { session: AuditSession }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <article className="rounded-xl border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 p-3 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{clip(session.goal, 80)}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {session.actions} action{session.actions === 1 ? '' : 's'}
+            {session.blocked > 0 ? ` · ${session.blocked} blocked` : ''} ·{' '}
+            {clockAt(session.startedAt)} · {formatWhen(session.startedAt)}
+          </p>
+        </div>
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold',
+            OUTCOME_STYLES[session.outcome],
+          )}
+        >
+          {OUTCOME_LABELS[session.outcome]}
+        </span>
+        <ChevronDown
+          className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')}
+          strokeWidth={1.8}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <ul className="px-3 pb-3">
+          {session.rows.map((row, index) => (
+            <StepRow key={`${row.at}-${index}`} row={row} />
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  )
+}
+
+export function HistoryPanel() {
+  const [sessions, setSessions] = useState<AuditSession[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    setError(null)
+    try {
+      setSessions(await loadSessions())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      setSessions([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <section className="flex items-center gap-2.5">
+        <History className="size-5 text-primary" strokeWidth={1.8} aria-hidden />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[17px] font-bold tracking-tight">Task history</h2>
+          <p className="text-xs text-muted-foreground">Every action the agent took, and who allowed it.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void reload()}
+          aria-label="Reload history"
+          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <RefreshCw className="size-4" strokeWidth={1.8} />
+        </button>
+      </section>
+
+      {error ? (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      {sessions === null ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : sessions.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-6 text-center">
+          <p className="text-sm font-semibold">Nothing here yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Run a task from the Agent tab — each action it takes is written to this log.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {sessions.map((session) => (
+            <SessionCard key={session.id} session={session} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

@@ -32,6 +32,8 @@ corepack pnpm test             # unit tests (Vitest)
 node scripts/screenshot.mjs    # headless-Chrome screenshot of the side panel (needs `pnpm dev` running)
 node scripts/perception-check.mjs  # runs the perception layer on a fixture page in headless Chrome (needs `pnpm dev`)
 node scripts/actions-check.mjs     # runs the action executor (click/type/select/scroll) on the fixture (needs `pnpm dev`)
+node scripts/overlay-check.mjs     # renders the on-page element map + action highlight in headless Chrome (needs `pnpm dev`)
+node scripts/history-shot.mjs      # seeds the audit log and screenshots the History + Agent tabs (needs `pnpm dev`)
 ```
 
 ### Load the extension in Chrome
@@ -109,8 +111,8 @@ browser. Keys never leave your machine except in direct calls to the endpoint yo
 | 3     | LLM layer: provider abstraction, streaming tool calls, Dexie config store, Settings tab | done |
 | 4     | Tools + safety: registry, executor, action queue, risk scorer, CDP fallback | done |
 | 5     | Agent loop: planner/executor, loop detection, history compaction, kill switch | done |
-| 6     | Side panel UX: step timeline, approval cards, on-page highlight overlay | next |
-| 7     | Feature A: smart form filler + encrypted profile vault                  | — |
+| 6     | Side panel UX: live step timeline, approval cards, on-page element-map overlay, action highlight, History tab | done |
+| 7     | Feature A: smart form filler + encrypted profile vault                  | next |
 | 8     | Feature B: research engine                                              | — |
 | 9     | Feature C: tab manager                                                  | — |
 | 10    | Recipes, audit log, cost meter, Playwright E2E                          | — |

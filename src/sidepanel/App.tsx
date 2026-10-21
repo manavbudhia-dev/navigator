@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Bot, Clock, Copy, Search, Settings, Sparkle, UserRound, X } from 'lucide-react'
 
 import { AgentPanel } from './panels/AgentPanel'
+import { HistoryPanel } from './panels/HistoryPanel'
 import { PlaceholderPanel } from './panels/PlaceholderPanel'
 import { SettingsPanel } from './panels/SettingsPanel'
 import { cn } from '@/lib/utils'
@@ -17,11 +18,10 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 type ViewId = TabId | 'settings'
 
-const COMING_IN: Record<Exclude<TabId, 'agent'>, string> = {
+const COMING_IN: Record<Exclude<TabId, 'agent' | 'history'>, string> = {
   research: 'Batch 8',
   tabs: 'Batch 9',
   profiles: 'Batch 7',
-  history: 'Batch 10',
 }
 
 export default function App() {
@@ -83,7 +83,9 @@ export default function App() {
 
       <main className="flex-1 overflow-y-auto">
         {view === 'agent' ? (
-          <AgentPanel />
+          <AgentPanel onOpenHistory={() => setView('history')} />
+        ) : view === 'history' ? (
+          <HistoryPanel />
         ) : view === 'settings' ? (
           <SettingsPanel />
         ) : (

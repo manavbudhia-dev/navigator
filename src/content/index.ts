@@ -1,4 +1,5 @@
 import { performAct } from './actions'
+import { highlightElement, setOverlay } from './overlay'
 import { buildPageState } from './perception/pageState'
 import {
   isContentMessage,
@@ -27,6 +28,25 @@ function readPageMeta(): PageMeta {
   }
 }
 
+function readOverlay(visible: boolean | undefined, highlightIndex: number | undefined): ContentResponse {
+  const details: string[] = []
+  let error: string | null = null
+
+  if (highlightIndex !== undefined) {
+    const result = highlightElement(highlightIndex)
+    if (result.ok) details.push(result.detail)
+    else error = result.error
+  }
+  if (visible !== undefined) {
+    const result = setOverlay(visible)
+    if (result.ok) details.push(result.detail)
+    else error = error ?? result.error
+  }
+
+  if (details.length > 0) return { ok: true, detail: details.join(' · ') }
+  return { ok: false, error: error ?? 'Overlay message had nothing to apply.' }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isContentMessage(message)) return false
 
@@ -35,6 +55,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     response = { ok: true, meta: readPageMeta() }
   } else if (message.kind === 'act') {
     response = performAct(message.action)
+  } else if (message.kind === 'overlay') {
+    response = readOverlay(message.visible, message.highlightIndex)
   } else {
     const pageState = buildPageState(document, {
       ...DEFAULT_PAGE_STATE_OPTIONS,

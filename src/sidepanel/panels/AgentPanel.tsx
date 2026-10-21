@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   ArrowRight,
   ChevronDown,
-  Ellipsis,
+  Layers,
   ExternalLink,
   FileText,
   Globe,
@@ -19,6 +19,7 @@ import {
 
 import { StatusPill, type ConnectionStatus } from '../components/StatusPill'
 import { useTaskBridge } from '../useTaskBridge'
+import { formatWhen, loadSessions, type AuditSession } from '@/memory/history'
 import { inExtension } from '@/lib/extension'
 import { cn } from '@/lib/utils'
 import { AGENT_MODES, MODE_LABELS, type AgentMode } from '@/types/agent'
@@ -31,22 +32,20 @@ const MODE_DESCRIPTIONS: Record<AgentMode, string> = {
   auto: 'Acts alone on allowlisted sites',
 }
 
+const OUTCOME_LABELS: Record<AuditSession['outcome'], string> = {
+  success: 'Completed',
+  failed: 'Failed',
+  stopped: 'Stopped',
+  unknown: 'No finish',
+}
+
 type ActiveTabInfo = {
   title: string
   hostname: string
   favIconUrl?: string | undefined
 }
 
-const RECENT_ACTIVITY = [
-  {
-    id: 'compare-boilerplates',
-    title: 'Compare extension boilerplates',
-    detail: 'Find 3 GitHub repos and compare stars, features, and maintenance',
-    status: 'Ready to run',
-  },
-]
-
-export function AgentPanel() {
+export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
   const [goal, setGoal] = useState('')
   const [expanded, setExpanded] = useState(true)
   const [mode, setMode] = useState<AgentMode>('copilot')
@@ -61,6 +60,9 @@ export function AgentPanel() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null)
   const [answerDraft, setAnswerDraft] = useState('')
+  const [overlayOn, setOverlayOn] = useState(false)
+  const [sessions, setSessions] = useState<AuditSession[]>([])
+  const timelineRef = useRef<HTMLOListElement>(null)
   const task = useTaskBridge()
 
   const runDiagnostics = useCallback(async () => {
@@ -113,6 +115,31 @@ export function AgentPanel() {
       .catch(() => setActiveTab(null))
     void runDiagnostics()
   }, [runDiagnostics])
+
+  const finished = task.events.some((event) => event.type === 'done' || event.type === 'failed')
+
+  useEffect(() => {
+    loadSessions()
+      .then(setSessions)
+      .catch(() => setSessions([]))
+  }, [finished])
+
+  useEffect(() => {
+    const list = timelineRef.current
+    if (list) list.scrollTop = list.scrollHeight
+  }, [task.events])
+
+  const overlayMessage = useCallback(async (visible: boolean) => {
+    if (!inExtension) return
+    setOverlayOn(visible)
+    try {
+      const message: BackgroundMessage = { kind: 'set-overlay', visible }
+      const response = (await chrome.runtime.sendMessage(message)) as BackgroundResponse
+      if (!response.ok) setOverlayOn(!visible)
+    } catch {
+      setOverlayOn(!visible)
+    }
+  }, [])
 
   async function handleRun() {
     const trimmed = goal.trim()
@@ -332,9 +359,18 @@ export function AgentPanel() {
               <h3 className="text-sm font-semibold">Live task</h3>
               <StatusPill status={task.running ? 'checking' : 'connected'} className="ml-auto" />
             </div>
-            <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto text-xs">
+            <ol
+              ref={timelineRef}
+              className="flex max-h-72 flex-col gap-1.5 overflow-y-auto border-l border-border pl-3 text-xs"
+            >
               {task.events.map((event, index) => (
-                <TimelineRow key={index} event={event} />
+                <li key={index} className="relative">
+                  <span
+                    className="absolute -left-[calc(0.75rem+2.5px)] top-1.5 size-1.5 rounded-full bg-primary/50"
+                    aria-hidden
+                  />
+                  <TimelineRow event={event} />
+                </li>
               ))}
             </ol>
           </div>
@@ -402,15 +438,33 @@ export function AgentPanel() {
               : 'Side panel, service worker, and content script are communicating.'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void runDiagnostics()}
-          disabled={status === 'checking'}
-          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 disabled:opacity-60"
-        >
-          <Activity className="size-4" strokeWidth={2} aria-hidden />
-          {status === 'checking' ? 'Running…' : 'Run diagnostics'}
-        </button>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void runDiagnostics()}
+            disabled={status === 'checking'}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-100 disabled:opacity-60"
+          >
+            <Activity className="size-4" strokeWidth={2} aria-hidden />
+            {status === 'checking' ? 'Running…' : 'Run diagnostics'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void overlayMessage(!overlayOn)}
+            disabled={!inExtension}
+            aria-pressed={overlayOn}
+            title="Number every element the agent can see"
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50',
+              overlayOn
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-muted text-foreground hover:bg-muted/70',
+            )}
+          >
+            <Layers className="size-4" strokeWidth={2} aria-hidden />
+            {overlayOn ? 'Hide element map' : 'Show element map'}
+          </button>
+        </div>
         {meta ? (
           <p className="mt-2 text-[11px] text-muted-foreground">
             {meta.title} · scrolled {meta.scrollPercent}% · {meta.pageHeightPx}px page
@@ -424,31 +478,41 @@ export function AgentPanel() {
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Recent activity</h3>
-          <button type="button" className="text-xs font-semibold text-primary hover:underline">
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="text-xs font-semibold text-primary hover:underline"
+          >
             View all
           </button>
         </div>
-        {RECENT_ACTIVITY.map((item) => (
-          <article key={item.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-              <FileText className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{item.title}</p>
-              <p className="truncate text-xs text-muted-foreground">{item.detail}</p>
-            </div>
-            <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-              {item.status}
-            </span>
-            <button
-              type="button"
-              aria-label={`More options for ${item.title}`}
-              className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        {sessions.length === 0 ? (
+          <p className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
+            No tasks recorded yet. Run one and every action lands here.
+          </p>
+        ) : (
+          sessions.slice(0, 3).map((session) => (
+            <article
+              key={session.id}
+              className="flex cursor-pointer items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/50"
+              onClick={onOpenHistory}
             >
-              <Ellipsis className="size-4" strokeWidth={2} />
-            </button>
-          </article>
-        ))}
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <FileText className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{clip(session.goal, 60)}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {session.actions} action{session.actions === 1 ? '' : 's'} ·{' '}
+                  {formatWhen(session.startedAt)}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                {OUTCOME_LABELS[session.outcome]}
+              </span>
+            </article>
+          ))
+        )}
       </section>
     </div>
   )
@@ -462,41 +526,41 @@ function clip(text: string, max = 160): string {
 function TimelineRow({ event }: { event: TaskEvent }) {
   switch (event.type) {
     case 'step':
-      return <li className="mt-1 font-semibold text-muted-foreground">Step {event.n}</li>
+      return <div className="mt-1 font-semibold text-muted-foreground">Step {event.n}</div>
     case 'thinking':
-      return <li className="italic text-muted-foreground">{clip(event.text)}</li>
+      return <div className="italic text-muted-foreground">{clip(event.text)}</div>
     case 'action':
-      return <li>→ {event.summary}</li>
+      return <div>→ {event.summary}</div>
     case 'result':
       return (
-        <li className={event.ok ? 'text-emerald-600' : 'text-red-600'}>
+        <div className={event.ok ? 'text-emerald-600' : 'text-red-600'}>
           {event.ok ? '✓' : '✗'} {clip(event.content)}
-        </li>
+        </div>
       )
     case 'blocked':
       return (
-        <li className="text-red-600">
+        <div className="text-red-600">
           ⛔ {event.tool}: {event.reason}
-        </li>
+        </div>
       )
     case 'approval':
-      return <li className="text-amber-700">⏳ awaiting approval: {clip(event.summary)}</li>
+      return <div className="text-amber-700">⏳ awaiting approval: {clip(event.summary)}</div>
     case 'approval-resolved':
-      return <li className="text-muted-foreground">{event.approved ? 'approved' : 'denied'}</li>
+      return <div className="text-muted-foreground">{event.approved ? 'approved' : 'denied'}</div>
     case 'question':
-      return <li className="text-blue-700">❓ {clip(event.question)}</li>
+      return <div className="text-blue-700">❓ {clip(event.question)}</div>
     case 'question-resolved':
       return null
     case 'note':
-      return <li className="text-amber-700">ℹ {event.text}</li>
+      return <div className="text-amber-700">ℹ {event.text}</div>
     case 'done':
       return (
-        <li className="mt-1 font-semibold">
+        <div className="mt-1 font-semibold">
           {event.success ? 'Done' : 'Failed'} — {clip(event.summary)} · {event.steps} steps · ~
           {event.promptTokens + event.completionTokens} tokens
-        </li>
+        </div>
       )
     case 'failed':
-      return <li className="mt-1 font-semibold text-red-600">Failed: {event.error}</li>
+      return <div className="mt-1 font-semibold text-red-600">Failed: {event.error}</div>
   }
 }

@@ -44,6 +44,13 @@ function toContentMessage(message: BackgroundMessage): ContentMessage {
       ? { kind: 'get-page-state' }
       : { kind: 'get-page-state', includeOffViewport: message.includeOffViewport }
   }
+  if (message.kind === 'set-overlay') {
+    return {
+      kind: 'overlay',
+      ...(message.visible !== undefined ? { visible: message.visible } : {}),
+      ...(message.highlightIndex !== undefined ? { highlightIndex: message.highlightIndex } : {}),
+    }
+  }
   throw new Error(`Not a tab message: ${message.kind}`)
 }
 

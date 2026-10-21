@@ -3,6 +3,7 @@ import { loadModelConfig } from '@/llm/config'
 import { KillSwitch } from '@/safety/killSwitch'
 import { coreTools } from '@/tools/definitions'
 import { ToolRegistry } from '@/tools/registry'
+import type { ContentMessage } from '@/types/messages'
 import type { TaskEvent } from '@/types/task'
 import type { AgentMode } from '@/types/agent'
 
@@ -36,6 +37,21 @@ async function getActiveTabId(): Promise<number> {
   return tab.id
 }
 
+/** Points the on-page overlay at the element the agent is about to touch. */
+function highlightElement(tabId: number, index: number): void {
+  const message: ContentMessage = { kind: 'overlay', highlightIndex: index }
+  void chrome.tabs.sendMessage(tabId, message).catch(() => {
+    // The tab moved on or has no content script — highlighting is cosmetic.
+  })
+}
+
+function emitAndHighlight(tabId: number, event: TaskEvent): void {
+  broadcast(event)
+  if (event.type !== 'action') return
+  const index = event.args['index']
+  if (typeof index === 'number') highlightElement(tabId, index)
+}
+
 export function isTaskRunning(): boolean {
   return active !== null
 }
@@ -55,7 +71,7 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
     chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 })
 
     const hooks: AgentHooks = {
-      emit: broadcast,
+      emit: (event) => emitAndHighlight(tabId, event),
       requestApproval: (request: ApprovalRequest) =>
         new Promise<boolean>((resolve) => {
           approvals.set(request.id, resolve)
