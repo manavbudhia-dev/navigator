@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Interaction fixture</title>
+    <style>
+      /* The menu is hidden until the page's own pointer handler opens it. */
+      #menu { display: none }
+      #nav.open #menu { display: block }
+      .slot { border: 1px dashed #999; padding: 8px }
+    </style>
+  </head>
+  <body>
+    <nav id="nav">
+      <span id="menu-button" style="cursor: pointer">Account</span>
+      <ul id="menu">
+        <li><a href="/profile">Profile</a></li>
+      </ul>
+    </nav>
+
+    <form id="form">
+      <label for="country">Country</label>
+      <select id="country">
+        <option>India</option>
+        <option value="de">Germany</option>
+      </select>
+
+      <label for="terms">I accept the marketing emails</label>
+      <input id="terms" type="checkbox" />
+
+      <input id="plan-a" type="radio" name="plan" checked />
+      <input id="plan-b" type="radio" name="plan" />
+
+      <label for="cv">CV</label>
+      <input id="cv" type="file" />
+
+      <button id="send" type="button">Send</button>
+    </form>
+
+    <div id="board">
+      <div id="card" draggable="true">Card one</div>
+      <div id="bin" class="slot" tabindex="0">Drop here</div>
+    </div>
+
+    <div id="late-holder"></div>
+  </body>
+</html>

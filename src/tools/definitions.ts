@@ -18,7 +18,7 @@ const ReadPageArgs = z.object({
 })
 
 const NavigateArgs = z.object({
-  url: z.string().min(1),
+  url: z.string().trim().min(1),
 })
 
 const ClickArgs = z.object({
@@ -54,6 +54,72 @@ const FillFormArgs = z.object({
   profile_id: z.string().optional(),
   use_llm: z.boolean().optional(),
 })
+
+const HoverArgs = z.object({ index: z.number().int().min(0) })
+
+const PressKeyArgs = z.object({
+  key: z.string().min(1),
+  index: z.number().int().min(0).optional(),
+})
+
+const SelectArgs = z.object({
+  index: z.number().int().min(0),
+  value: z.string().min(1),
+})
+
+const CheckArgs = z.object({
+  index: z.number().int().min(0),
+  state: z.boolean(),
+})
+
+const UploadArgs = z.object({
+  index: z.number().int().min(0),
+  file_ref: z.string().min(1),
+  profile_id: z.string().optional(),
+})
+
+const DragArgs = z.object({
+  from_index: z.number().int().min(0),
+  to_index: z.number().int().min(0),
+})
+
+const WaitForArgs = z.object({
+  condition: z.enum(['load', 'selector', 'text', 'quiet']),
+  value: z.string().optional(),
+  timeout_seconds: z.number().min(0.5).max(60).optional(),
+})
+
+/** Tools that take nothing at all: go_back, go_forward, reload. */
+const EmptyArgs = z.object({})
+
+/** Only text can be attached, so the mime type is guessed from the name. */
+const MIME_BY_EXTENSION: Record<string, string> = {
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+  json: 'application/json',
+  html: 'text/html',
+  xml: 'application/xml',
+  pdf: 'application/pdf',
+  rtf: 'application/rtf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+
+function mimeFor(fileName: string): string {
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? ''
+  return MIME_BY_EXTENSION[extension] ?? 'text/plain'
+}
+
+/** A stored document by name, or by kind when the name is not typed out. */
+export function pickStoredDocument(profile: Profile, ref: string) {
+  const wanted = ref.trim().toLowerCase()
+  return (
+    profile.documents.find((doc) => doc.fileName.toLowerCase() === wanted) ??
+    profile.documents.find((doc) => doc.kind === wanted) ??
+    null
+  )
+}
 
 /** https:// is added when the model omits a scheme. */
 export function normalizeUrl(url: string): string {
@@ -268,5 +334,192 @@ export function coreTools(): ToolSpec[] {
     },
   }
 
-  return [readPage, navigate, click, typeText, scroll, wait, askUser, finish, fillForm]
+  const hover: ToolSpec<typeof HoverArgs> = {
+    name: 'hover',
+    description:
+      'Move the pointer over an element to open a menu or tooltip. Re-read the page afterwards: the revealed items are new elements.',
+    kind: 'write',
+    schema: HoverArgs,
+    async run(args, ctx) {
+      return actResult(await ctx.host.act(ctx.tabId, { type: 'hover', index: args.index }))
+    },
+  }
+
+  const pressKey: ToolSpec<typeof PressKeyArgs> = {
+    name: 'press_key',
+    description:
+      'Press a key or combo ("Enter", "Escape", "Tab", "PageDown", "ctrl+a"). Pass index to aim it at one element, omit it for the focused element.',
+    kind: 'write',
+    schema: PressKeyArgs,
+    async run(args, ctx) {
+      return actResult(
+        await ctx.host.act(ctx.tabId, {
+          type: 'press_key',
+          key: args.key,
+          ...(args.index !== undefined ? { index: args.index } : {}),
+        }),
+      )
+    },
+  }
+
+  const selectOption: ToolSpec<typeof SelectArgs> = {
+    name: 'select_option',
+    description: 'Choose an option in a native dropdown by its visible text.',
+    kind: 'write',
+    schema: SelectArgs,
+    async run(args, ctx) {
+      return actResult(await ctx.host.act(ctx.tabId, { type: 'select', index: args.index, value: args.value }))
+    },
+  }
+
+  const check: ToolSpec<typeof CheckArgs> = {
+    name: 'check',
+    description:
+      'Tick or untick a checkbox or radio button. Consent, subscription and "confirm delete" boxes are refused without the user.',
+    kind: 'write',
+    schema: CheckArgs,
+    async run(args, ctx) {
+      return actResult(await ctx.host.act(ctx.tabId, { type: 'check', index: args.index, checked: args.state }))
+    },
+  }
+
+  const uploadFile: ToolSpec<typeof UploadArgs> = {
+    name: 'upload_file',
+    description:
+      'Attach a document saved in the profile vault to a file input. file_ref is the document name, or "resume" / "cover-letter". Navigator cannot read your disk, so only stored documents can be attached — ask the user to pick anything else.',
+    kind: 'write',
+    schema: UploadArgs,
+    async run(args, ctx) {
+      const resolved = await resolveProfile(ctx, args.profile_id)
+      if ('error' in resolved) return { ok: false, content: resolved.error }
+      const doc = pickStoredDocument(resolved.profile, args.file_ref)
+      if (doc === null) {
+        const stored = resolved.profile.documents.map((d) => d.fileName || d.kind).join(', ')
+        return { ok: false, content: `No "${args.file_ref}" in the "${resolved.profile.name}" profile. Stored: ${stored || 'nothing'}.` }
+      }
+      if (doc.text === undefined || doc.text === '') {
+        return {
+          ok: false,
+          content: `${doc.fileName} is stored as a name only — its contents were never saved, so there is nothing to attach. Ask the user to choose the file.`,
+        }
+      }
+      return actResult(
+        await ctx.host.act(ctx.tabId, {
+          type: 'upload',
+          index: args.index,
+          file: { name: doc.fileName || `${doc.kind}.txt`, mime: mimeFor(doc.fileName), text: doc.text },
+        }),
+      )
+    },
+  }
+
+  const dragAndDrop: ToolSpec<typeof DragArgs> = {
+    name: 'drag_and_drop',
+    description: 'Drag one element onto another (a sort handle onto a list slot, a file chip onto a drop zone).',
+    kind: 'write',
+    schema: DragArgs,
+    async run(args, ctx) {
+      return actResult(
+        await ctx.host.act(ctx.tabId, { type: 'drag', fromIndex: args.from_index, toIndex: args.to_index }),
+      )
+    },
+  }
+
+  const goBack: ToolSpec<typeof EmptyArgs> = {
+    name: 'go_back',
+    description: 'One step back in this tab’s history.',
+    kind: 'write',
+    schema: EmptyArgs,
+    async run(_args, ctx) {
+      await ctx.host.goBack(ctx.tabId)
+      return { ok: true, content: 'Went back one page. Re-read the page.' }
+    },
+  }
+
+  const goForward: ToolSpec<typeof EmptyArgs> = {
+    name: 'go_forward',
+    description: 'One step forward in this tab’s history.',
+    kind: 'write',
+    schema: EmptyArgs,
+    async run(_args, ctx) {
+      await ctx.host.goForward(ctx.tabId)
+      return { ok: true, content: 'Went forward one page. Re-read the page.' }
+    },
+  }
+
+  const reload: ToolSpec<typeof EmptyArgs> = {
+    name: 'reload',
+    description: 'Reload the current tab. Use when the page looks broken or stale.',
+    kind: 'write',
+    schema: EmptyArgs,
+    async run(_args, ctx) {
+      await ctx.host.reload(ctx.tabId)
+      return { ok: true, content: 'Reloaded the page. Re-read it.' }
+    },
+  }
+
+  const openTab: ToolSpec<typeof NavigateArgs> = {
+    name: 'open_tab',
+    description:
+      'Open a URL in a new background tab and keep working here. Use switch_tab to move into it; close_tabs to clean up.',
+    kind: 'write',
+    schema: NavigateArgs,
+    async run(args, ctx) {
+      const url = normalizeUrl(args.url)
+      const tabId = await ctx.host.openTab(url)
+      return { ok: true, content: `Opened ${url} in background tab ${tabId}.` }
+    },
+  }
+
+  const waitFor: ToolSpec<typeof WaitForArgs> = {
+    name: 'wait_for',
+    description:
+      'Wait until the page really is ready: "load" for the tab to finish loading, "selector" for a CSS selector to appear, "text" for a string to show up, "quiet" for the DOM to stop changing. Prefer this over wait.',
+    kind: 'read',
+    schema: WaitForArgs,
+    async run(args, ctx) {
+      const timeoutMs = Math.round((args.timeout_seconds ?? 10) * 1000)
+      if (args.condition === 'load') {
+        const done = await ctx.host.waitForLoad(ctx.tabId, timeoutMs)
+        return {
+          ok: true,
+          content: done
+            ? 'The tab finished loading. Re-read the page.'
+            : `The tab was still loading after ${args.timeout_seconds ?? 10}s. Re-read the page and see what arrived.`,
+        }
+      }
+      const value = args.value ?? ''
+      if (value === '' && args.condition !== 'quiet') {
+        return { ok: false, content: `wait_for "${args.condition}" needs a value.` }
+      }
+      try {
+        return actResult(await ctx.host.waitFor(ctx.tabId, args.condition, value, timeoutMs))
+      } catch (error) {
+        return { ok: false, content: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  }
+
+  return [
+    readPage,
+    navigate,
+    click,
+    typeText,
+    scroll,
+    wait,
+    askUser,
+    finish,
+    fillForm,
+    hover,
+    pressKey,
+    selectOption,
+    check,
+    uploadFile,
+    dragAndDrop,
+    goBack,
+    goForward,
+    reload,
+    openTab,
+    waitFor,
+  ]
 }

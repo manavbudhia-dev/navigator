@@ -22,12 +22,31 @@ import type { AuditRow } from '@/memory/db'
 /**
  * What replays as itself. Reads (`read_page`, tab queries) are re-done by the
  * engine, human tools are not automatable, and tab tools carry ids from a
- * browser window that no longer exists.
+ * browser window that no longer exists. `drag_and_drop` is deliberately absent:
+ * replay hands back one index, and a drag needs two.
  */
-const REPLAYABLE = new Set(['navigate', 'click', 'type_text', 'scroll', 'wait', 'fill_form'])
+const REPLAYABLE = new Set([
+  'navigate',
+  'click',
+  'type_text',
+  'scroll',
+  'wait',
+  'fill_form',
+  'hover',
+  'press_key',
+  'select_option',
+  'check',
+  'upload_file',
+  'go_back',
+  'go_forward',
+  'reload',
+  'wait_for',
+])
 
 /** Tools that point at a control, so a missing target means an unusable step. */
-const NEEDS_TARGET = new Set(['click', 'type_text'])
+const NEEDS_TARGET = new Set(['click', 'type_text', 'hover', 'select_option', 'check', 'upload_file'])
+
+const WAIT_CONDITIONS = new Set(['load', 'selector', 'text', 'quiet'])
 
 const MAX_NOTE = 140
 
@@ -71,13 +90,29 @@ export function stepsFromRun(rows: readonly AuditRow[]): RecipeStep[] {
       if (typeof row.args['url'] !== 'string') continue
       args['url'] = row.args['url']
     } else if (row.tool === 'type_text') {
-      const target = targetOf(row)
-      if (target === null) continue
       if (typeof row.args['text'] !== 'string') continue
       args['text'] = row.args['text']
       if (row.args['submit'] === true) args['submit'] = true
-    } else if (row.tool === 'click') {
-      if (targetOf(row) === null) continue
+    } else if (row.tool === 'press_key') {
+      if (typeof row.args['key'] !== 'string') continue
+      args['key'] = row.args['key']
+    } else if (row.tool === 'select_option') {
+      if (typeof row.args['value'] !== 'string') continue
+      args['value'] = row.args['value']
+    } else if (row.tool === 'check') {
+      if (typeof row.args['state'] !== 'boolean') continue
+      args['state'] = row.args['state']
+    } else if (row.tool === 'upload_file') {
+      // Only the name of the stored document is recorded, never its contents.
+      if (typeof row.args['file_ref'] !== 'string') continue
+      args['file_ref'] = row.args['file_ref']
+      if (typeof row.args['profile_id'] === 'string') args['profile_id'] = row.args['profile_id']
+    } else if (row.tool === 'wait_for') {
+      const condition = row.args['condition']
+      if (typeof condition !== 'string' || !WAIT_CONDITIONS.has(condition)) continue
+      args['condition'] = condition
+      if (typeof row.args['value'] === 'string') args['value'] = row.args['value']
+      if (typeof row.args['timeout_seconds'] === 'number') args['timeout_seconds'] = row.args['timeout_seconds']
     } else if (row.tool === 'scroll') {
       // Scrolling one element by index is not a thing a page still has later.
       if (row.args['index'] !== undefined) continue
@@ -90,6 +125,10 @@ export function stepsFromRun(rows: readonly AuditRow[]): RecipeStep[] {
     } else if (row.tool === 'fill_form') {
       if (typeof row.args['profile_id'] === 'string') args['profile_id'] = row.args['profile_id']
     }
+
+    // Hovering, ticking or choosing a control that can no longer be found
+    // would replay as a click on nothing.
+    if (NEEDS_TARGET.has(row.tool) && targetOf(row) === null) continue
 
     const step: RecipeStep = { tool: row.tool, args, note: clipNote(row.detail), target: targetOf(row) }
 

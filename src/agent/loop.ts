@@ -98,6 +98,31 @@ function summarizeArgs(tool: string, args: Record<string, unknown>): string {
   if (tool === 'type_text') return `type "${String(args['text'])}" into ${String(args['index'])}`
   if (tool === 'navigate') return `open ${String(args['url'])}`
   if (tool === 'scroll') return `scroll ${String(args['direction'])}`
+  if (tool === 'hover') return `hover element ${String(args['index'])}`
+  if (tool === 'press_key') {
+    const target = typeof args['index'] === 'number' ? ` on element ${String(args['index'])}` : ''
+    return `press ${String(args['key'])}${target}`
+  }
+  if (tool === 'select_option') {
+    return `choose "${String(args['value'])}" in dropdown ${String(args['index'])}`
+  }
+  if (tool === 'check') {
+    return `${args['state'] === false ? 'untick' : 'tick'} element ${String(args['index'])}`
+  }
+  if (tool === 'upload_file') {
+    return `attach "${String(args['file_ref'])}" to file input ${String(args['index'])}`
+  }
+  if (tool === 'drag_and_drop') {
+    return `drag element ${String(args['from_index'])} onto ${String(args['to_index'])}`
+  }
+  if (tool === 'open_tab') return `open ${String(args['url'])} in a new background tab`
+  if (tool === 'go_back') return 'go back one page'
+  if (tool === 'go_forward') return 'go forward one page'
+  if (tool === 'reload') return 'reload the page'
+  if (tool === 'wait_for') {
+    const value = typeof args['value'] === 'string' ? ` "${String(args['value'])}"` : ''
+    return `wait for ${String(args['condition'])}${value}`
+  }
   return `${tool} ${JSON.stringify(args)}`
 }
 
@@ -321,8 +346,14 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       }
 
       // --- safety gate -----------------------------------------------------
-      const element =
-        typeof args['index'] === 'number' ? findElementInfo(pageLines, args['index']) : null
+      // A drag is scored against its drop target: that is where the damage lands.
+      const indexArg =
+        typeof args['index'] === 'number'
+          ? args['index']
+          : typeof args['to_index'] === 'number'
+            ? args['to_index']
+            : null
+      const element = indexArg === null ? null : findElementInfo(pageLines, indexArg)
       const assessment = assessRisk({
         tool: call.name,
         kind: spec.kind,

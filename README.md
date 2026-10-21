@@ -81,6 +81,7 @@ src/
   lib/               framework-agnostic helpers
   styles/            Tailwind entry point + design tokens
 e2e/                 Playwright flows, the mock server they run against and their page fixtures
+fixtures/            local pages the headless Chrome checks load from the dev server
 scripts/             headless-Chrome checks and screenshots for one feature each
 ```
 
@@ -243,6 +244,47 @@ anything. Recorded selectors go to the audit log, never into the model transcrip
 
 ---
 
+## Interaction and navigation tools
+
+Ten verbs beyond click, type and scroll, so the agent can drive the widgets a real page actually
+has (`src/tools/definitions.ts`):
+
+| Tool | What it does |
+| ------------ | -------------------------------------------------------------------- |
+| `hover` | Sends real pointer and mouse events at an element — the way into dropdown menus. |
+| `press_key` | `Enter`, `Escape`, `Tab`, or a combo like `ctrl+a`. With an index the key goes to that element, otherwise to the page. |
+| `select_option` | Picks a `<select>` option by its visible text, falling back to its value, and fires `change`. |
+| `check` | Ticks or unticks a checkbox — and refuses to untick a radio, which clears by itself. |
+| `upload_file` | Attaches a document already stored in your vault to a file input. |
+| `drag_and_drop` | A full `dragstart → dragenter → dragover → drop → dragend` sequence between two elements. |
+| `go_back` / `go_forward` / `reload` | History, via the tab itself. |
+| `open_tab` | Opens a new background tab and reports its index. |
+| `wait_for` | Waits for `load`, a `selector`, some `text`, or `quiet` (500 ms with no DOM mutation) instead of guessing a sleep. |
+
+Three limits worth knowing, because the agent is told about them rather than left to discover them:
+
+- **`upload_file` can only attach what the vault already holds.** Chrome gives content scripts no
+  disk access, so the file arrives as the stored document's text under its recorded name and MIME
+  type. When a task needs a file that is not in the vault, the agent is instructed to ask you
+  instead of pretending.
+- **`wait_for` has no `network_idle`.** That would need the `webRequest` permission, which this
+  extension deliberately does not request. `quiet` is the substitute: it waits for the page to stop
+  changing.
+- **A drag is scored against the element it lands on**, not the one it picks up — the damage happens
+  at the drop target. That is also why drags are never saved into recipes: replay hands back one
+  element index per step and a drag needs two.
+
+Every new verb goes through the same risk scorer and approval gate as the old ones, and each has an
+approval-card phrase you can read before allowing it (`attach "resume.pdf" to file input 2`,
+`drag element 4 onto 9`). `node scripts/interaction-check.mjs` drives all of them against real
+Chromium and asserts the page's own listeners fired — the menu opened, the `<select>` reported
+`change`, the file input holds one file with the right name, size and type, and the card really
+moved into the bin. The fixture (`fixtures/interaction.html`) is deliberately pure markup: page
+behaviour is installed from the check via `page.evaluate`, because the CRXJS dev middleware rewrites
+every `<script>` tag in a root-served HTML file into an empty inline-script module.
+
+---
+
 ## End-to-end tests
 
 `corepack pnpm test:e2e` runs the three flows the spec names (§13.6) against the real built
@@ -295,6 +337,9 @@ in one browser would fight over it.
 | 8     | Feature B: research engine                                              | done |
 | 9     | Feature C: tab manager                                                  | done |
 | 10    | Recipes, audit log, cost meter, Playwright E2E                          | done |
+| 11a   | Interaction and navigation tools: hover, press_key, select_option, check, upload_file, drag_and_drop, history, open_tab, wait_for | done |
+| 11b   | Data tools: structured extraction, screenshot, file output, long-term memory | next |
+| 11c   | Command palette, keyboard-first navigation, screen-reader announcements | planned |
 
 ## Safety model
 

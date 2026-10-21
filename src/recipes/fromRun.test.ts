@@ -98,6 +98,46 @@ describe('stepsFromRun', () => {
     ])
   })
 
+  it('records the new interaction verbs with their arguments', () => {
+    const steps = stepsFromRun([
+      row({ at: 1, tool: 'hover', args: { index: 3 }, target: CLICK }),
+      row({ at: 2, tool: 'press_key', args: { index: 3, key: 'Enter' } }),
+      row({ at: 3, tool: 'select_option', args: { index: 5, value: 'Germany' }, target: CITY }),
+      row({ at: 4, tool: 'check', args: { index: 6, state: true }, target: target('Newsletter', 'input') }),
+      row({ at: 5, tool: 'upload_file', args: { index: 7, file_ref: 'resume.pdf' }, target: target('CV') }),
+      row({ at: 6, tool: 'wait_for', args: { condition: 'selector', value: '#done', timeout_seconds: 5 } }),
+      row({ at: 7, tool: 'reload', args: {} }),
+    ])
+    expect(steps.map((step) => [step.tool, step.args])).toEqual([
+      ['hover', {}],
+      ['press_key', { key: 'Enter' }],
+      ['select_option', { value: 'Germany' }],
+      ['check', { state: true }],
+      ['upload_file', { file_ref: 'resume.pdf' }],
+      ['wait_for', { condition: 'selector', value: '#done', timeout_seconds: 5 }],
+      ['reload', {}],
+    ])
+    expect(steps[0]!.target?.label).toBe('Apply now')
+  })
+
+  it('drops a verb that lost its control, its argument, or both', () => {
+    const steps = stepsFromRun([
+      row({ at: 1, tool: 'hover', args: { index: 3 } }),
+      row({ at: 2, tool: 'check', args: { index: 6 }, target: CITY }),
+      row({ at: 3, tool: 'select_option', args: { index: 6, value: 12 }, target: CITY }),
+      row({ at: 4, tool: 'wait_for', args: { condition: 'network_idle' } }),
+      row({ at: 5, tool: 'upload_file', args: { index: 8 } }),
+    ])
+    expect(steps).toEqual([])
+  })
+
+  it('never records a drag, because replay can only hand back one control', () => {
+    const steps = stepsFromRun([
+      row({ at: 1, tool: 'drag_and_drop', args: { from_index: 2, to_index: 5 }, target: CITY }),
+    ])
+    expect(steps).toEqual([])
+  })
+
   it('keeps fill_form with its profile and a submit flag', () => {
     const steps = stepsFromRun([
       row({ at: 1, tool: 'fill_form', args: { profile_id: 'p1', use_llm: true } }),

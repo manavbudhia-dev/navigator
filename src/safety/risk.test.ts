@@ -89,6 +89,38 @@ describe('assessRisk', () => {
     expect(a.hardBlock).toBe('payment')
   })
 
+  it('rates the Batch 11 verbs by what they can do', () => {
+    expect(assessRisk({ tool: 'hover', kind: 'write' }).level).toBe('low')
+    expect(assessRisk({ tool: 'go_back', kind: 'write' }).level).toBe('low')
+    expect(assessRisk({ tool: 'press_key', kind: 'write' }).level).toBe('medium')
+    expect(assessRisk({ tool: 'select_option', kind: 'write' }).level).toBe('medium')
+    expect(assessRisk({ tool: 'wait_for', kind: 'read' }).level).toBe('safe')
+  })
+
+  it('keeps a document leaving the machine out of Auto mode', () => {
+    const a = assessRisk({ tool: 'upload_file', kind: 'write', element: { role: 'file', text: 'Attach CV' } })
+    expect(a.level).toBe('high')
+    expect(a.hardBlock).toBeNull()
+  })
+
+  it('still hard-blocks a consent box ticked by check', () => {
+    const a = assessRisk({
+      tool: 'check',
+      kind: 'write',
+      element: { role: 'checkbox', text: 'I agree to the Terms of Service' },
+    })
+    expect(a.hardBlock).toBe('legal-consent')
+  })
+
+  it('still hard-blocks a destructive box dropped onto by drag_and_drop', () => {
+    const a = assessRisk({
+      tool: 'drag_and_drop',
+      kind: 'write',
+      element: { role: 'button', text: 'Delete permanently' },
+    })
+    expect(a.hardBlock).toBe('delete-or-confirm')
+  })
+
   it('falls back to medium for unknown write tools', () => {
     const a = assessRisk({ tool: 'mystery', kind: 'write' })
     expect(a.level).toBe('medium')

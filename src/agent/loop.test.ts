@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { coreTools } from '@/tools/definitions'
 import { ToolRegistry } from '@/tools/registry'
+import { stubNavigation } from '@/tools/testUtils'
 import type { AuditInput } from '@/safety/audit'
 import type { ModelConfig } from '@/llm/config'
 import type { CompletionRequest, CompletionResult } from '@/llm/types'
@@ -77,6 +78,7 @@ function makeHost() {
     async locate() {
       return null
     },
+    ...stubNavigation(),
   }
   return { host, acts }
 }
@@ -245,6 +247,37 @@ describe('runAgentTask', () => {
     expect(approvals).toHaveLength(1)
     expect(approvals[0]!.hardBlock).toBe('payment')
     expect(acts).toEqual([])
+  })
+
+  it('scores a drag against the control it lands on', async () => {
+    const { promise, approvals, acts } = run(
+      [
+        toolCall('read_page', {}),
+        toolCall('drag_and_drop', { from_index: 1, to_index: 3 }),
+        toolCall('finish', { success: false, summary: 'blocked' }),
+      ],
+      'auto',
+      false,
+    )
+    await promise
+    expect(approvals[0]!.hardBlock).toBe('payment')
+    expect(acts).toEqual([])
+  })
+
+  it('says what a new verb is about to do in the approval card', async () => {
+    const { promise, events } = run(
+      [
+        toolCall('read_page', {}),
+        toolCall('upload_file', { index: 2, file_ref: 'resume.pdf' }),
+        toolCall('finish', { success: false, summary: 'asked' }),
+      ],
+      'copilot',
+      false,
+    )
+    await promise
+    const action = events.filter((event) => event.type === 'action').at(-1)
+    if (action?.type !== 'action') throw new Error('no action event')
+    expect(action.summary).toBe('attach "resume.pdf" to file input 2')
   })
 
   it('detects a stuck loop and stops', async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { coreTools } from './definitions'
 import { ToolRegistry } from './registry'
+import { stubNavigation } from './testUtils'
 import { emptyProfile } from '@/types/vault'
 import type { ActRequest } from '@/types/actions'
 import type { FormFieldView } from '@/content/formFields'
@@ -88,7 +89,7 @@ function harness(
       if (options.actFailure && action.type === 'type' && action.index === options.actFailure.index) {
         return { ok: false, error: options.actFailure.error }
       }
-      return { ok: true, detail: `Typed into ${action.index}` }
+      return { ok: true, detail: 'Typed' }
     },
     async navigate() {},
     async openTab() {
@@ -101,6 +102,7 @@ function harness(
     async locate() {
       return null
     },
+    ...stubNavigation(),
   } satisfies ToolHost
 
   const complete = async (messages: ChatMessage[]): Promise<CompletionResult> => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { coreTools, normalizeUrl } from './definitions'
 import { ToolRegistry } from './registry'
+import { stubNavigation } from './testUtils'
 
 import type { ActRequest, ActResult } from '@/types/actions'
 import type { PageState } from '@/types/pageState'
@@ -63,6 +64,7 @@ function fakeContext(calls: Calls, actResult: ActResult = { ok: true, detail: 'C
     async locate() {
       return null
     },
+    ...stubNavigation(),
   }
   const controller = new AbortController()
   return { host, tabId: 1, signal: controller.signal }
@@ -85,6 +87,17 @@ describe('ToolRegistry', () => {
       'ask_user',
       'finish',
       'fill_form',
+      'hover',
+      'press_key',
+      'select_option',
+      'check',
+      'upload_file',
+      'drag_and_drop',
+      'go_back',
+      'go_forward',
+      'reload',
+      'open_tab',
+      'wait_for',
     ])
     const click = defs.find((d) => d.name === 'click')!
     expect(click.description.length).toBeGreaterThan(10)

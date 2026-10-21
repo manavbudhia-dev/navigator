@@ -20,13 +20,15 @@ async function sendToTab(tabId: number, message: ContentMessage): Promise<Conten
   }
 }
 
-export async function waitForTabComplete(tabId: number, timeoutMs = 15_000): Promise<void> {
+/** True when the tab reached "complete"; false when the timeout ran out first. */
+export async function waitForTabComplete(tabId: number, timeoutMs = 15_000): Promise<boolean> {
   const started = Date.now()
   while (Date.now() - started < timeoutMs) {
     const tab = await chrome.tabs.get(tabId)
-    if (tab.status === 'complete') return
+    if (tab.status === 'complete') return true
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
+  return false
 }
 
 async function runAct(tabId: number, action: ActRequest): Promise<ActResult> {
@@ -76,6 +78,29 @@ export function createToolHost(): ToolHost {
       const tab = await chrome.tabs.create({ url, active: false })
       if (tab.id === undefined) throw new Error('Chrome refused to open a new tab.')
       return tab.id
+    },
+
+    async goBack(tabId) {
+      await chrome.tabs.goBack(tabId)
+      await waitForTabComplete(tabId)
+    },
+
+    async goForward(tabId) {
+      await chrome.tabs.goForward(tabId)
+      await waitForTabComplete(tabId)
+    },
+
+    async reload(tabId) {
+      await chrome.tabs.reload(tabId)
+      await waitForTabComplete(tabId)
+    },
+
+    async waitFor(tabId, condition, value, timeoutMs) {
+      return (await sendToTab(tabId, { kind: 'wait-for', condition, value, timeoutMs })) as ActResult
+    },
+
+    waitForLoad(tabId, timeoutMs) {
+      return waitForTabComplete(tabId, timeoutMs)
     },
 
     review(tabId, indices) {

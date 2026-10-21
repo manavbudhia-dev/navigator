@@ -7,6 +7,7 @@
 import type { ActRequest, ActResult, ActTarget } from './actions'
 import type { AgentMode } from './agent'
 import type { FormFieldView } from '@/content/formFields'
+import type { WaitCondition } from '@/content/waitFor'
 import type { ArticlePayload, ResearchDepth } from '@/research/types'
 import type { TabIntent, TabReport } from '@/tabs/types'
 import type { PageState } from './pageState'
@@ -62,6 +63,7 @@ export type ContentMessage =
   | { kind: 'get-form-fields' }
   | { kind: 'get-article' }
   | { kind: 'locate'; target: ActTarget }
+  | { kind: 'wait-for'; condition: WaitCondition; value: string; timeoutMs: number }
 
 export type ContentResponse =
   | { ok: true; meta: PageMeta }
@@ -108,6 +110,7 @@ export function isContentMessage(value: unknown): value is ContentMessage {
       value.kind === 'overlay' ||
       value.kind === 'get-form-fields' ||
       value.kind === 'get-article' ||
-      value.kind === 'locate')
+      value.kind === 'locate' ||
+      value.kind === 'wait-for')
   )
 }

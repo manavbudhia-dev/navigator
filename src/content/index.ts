@@ -4,6 +4,7 @@ import { readFormFields } from './formFields'
 import { highlightElement, markForReview, setOverlay } from './overlay'
 import { locateRecorded } from './perception/locate'
 import { buildPageState, getSnapshot } from './perception/pageState'
+import { waitForInPage } from './waitFor'
 import {
   isContentMessage,
   type ContentResponse,
@@ -62,6 +63,13 @@ function readOverlay(
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isContentMessage(message)) return false
+
+  // Waiting is the only request that has to outlive this handler, so it answers
+  // asynchronously and keeps the channel open.
+  if (message.kind === 'wait-for') {
+    void waitForInPage(message.condition, message.value, message.timeoutMs).then(sendResponse)
+    return true
+  }
 
   let response: ContentResponse
   if (message.kind === 'ping') {

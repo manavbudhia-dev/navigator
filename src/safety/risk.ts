@@ -64,6 +64,21 @@ const BASE_RISK: Record<string, RiskLevel> = {
   close_tabs: 'high',
   undo_tab_close: 'low',
   suspend_heavy_tabs: 'medium',
+  // Interaction verbs (spec §4). Hovering and page history steps are
+  // reversible reads in practice; anything that changes a control's state is
+  // medium, and `check` is caught by the consent/destructive regexes above.
+  hover: 'low',
+  press_key: 'medium',
+  select_option: 'medium',
+  check: 'medium',
+  drag_and_drop: 'medium',
+  go_back: 'low',
+  go_forward: 'low',
+  reload: 'low',
+  open_tab: 'low',
+  wait_for: 'safe',
+  // A stored document leaves the machine; Auto mode always asks.
+  upload_file: 'high',
 }
 
 const PAYMENT = /\b(checkout|pay now|place order|buy now|purchase|subscribe|proceed to payment)\b|\bcard (number|cvv|details)\b|\bbilling address\b/i

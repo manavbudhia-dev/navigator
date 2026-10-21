@@ -7,6 +7,7 @@ import type { TabIntent, TabReport } from '@/tabs/types'
 import { assessRisk } from '@/safety/risk'
 import type { ToolContext, ToolHost, ToolSpec } from './types'
 import { reportToText, tabTools } from './tabTools'
+import { stubNavigation } from './testUtils'
 
 const TABS = [
   tab(1, { index: 0, url: 'https://youtube.com/watch?v=a', title: 'Heat pump mythbusting', active: true }),
@@ -58,6 +59,7 @@ function spy(report: TabReport = emptyReport()): { intents: TabIntent[]; guards:
     },
     review() {},
     locate: async () => null,
+    ...stubNavigation(),
   }
   const context: ToolContext = {
     host,
@@ -231,6 +233,7 @@ describe('tab tools: results for the model', () => {
       sleep: async () => {},
       review: () => {},
       locate: async () => null,
+      ...stubNavigation(),
     } satisfies ToolHost
     const context: ToolContext = { host, tabId: 1, signal: new AbortController().signal }
     for (const spec of tabTools()) {

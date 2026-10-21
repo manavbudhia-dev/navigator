@@ -4,6 +4,7 @@ import type { ActRequest, ActResult, ActTarget } from '@/types/actions'
 import type { PageState } from '@/types/pageState'
 import type { Profile, ProfileMeta } from '@/types/vault'
 import type { FormFieldView } from '@/content/formFields'
+import type { WaitCondition } from '@/content/waitFor'
 import type { ChatMessage, CompletionResult } from '@/llm/types'
 import type { TabIntent, TabReport } from '@/tabs/types'
 
@@ -37,6 +38,13 @@ export interface ToolHost {
   locate(tabId: number, target: ActTarget): Promise<number | null>
   navigate(tabId: number, url: string): Promise<void>
   openTab(url: string): Promise<number>
+  goBack(tabId: number): Promise<void>
+  goForward(tabId: number): Promise<void>
+  reload(tabId: number): Promise<void>
+  /** Ask the page itself to wait for a selector, text, or a still DOM. */
+  waitFor(tabId: number, condition: WaitCondition, value: string, timeoutMs: number): Promise<ActResult>
+  /** True when the tab reached "complete" before the timeout ran out. */
+  waitForLoad(tabId: number, timeoutMs: number): Promise<boolean>
   sleep(ms: number, signal: AbortSignal): Promise<void>
   /** Draw red "needs you" boxes on the page. Fire and forget. */
   review(tabId: number, indices: number[]): void

@@ -75,7 +75,10 @@ function roleOf(el: Element): ElementRole | null {
   const cursorPointer = style?.cursor === 'pointer'
   const focusable = (Number(el.getAttribute('tabindex')) || 0) >= 0 && el.hasAttribute('tabindex')
   const hasInlineHandler = el.hasAttribute('onclick')
-  if (cursorPointer || focusable || hasInlineHandler) return 'clickable'
+  // A drag handle is a control even when it has no role: drag_and_drop needs
+  // to be able to name it.
+  const draggable = el.getAttribute('draggable') === 'true'
+  if (cursorPointer || focusable || hasInlineHandler || draggable) return 'clickable'
 
   return null
 }

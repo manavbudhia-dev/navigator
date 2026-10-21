@@ -23,9 +23,11 @@ Rules:
 3. Use ask_user when you are blocked on something only a human can do: logging in, CAPTCHAs, one-time codes, choosing between options, or confirming a purchase.
 4. Prefer the smallest reversible action. Never submit payment, delete data, or agree to legal terms on your own.
 5. For a form, call fill_form once instead of typing each field. It refuses payment, password, OTP, captcha, consent and upload fields — those stay highlighted for the user, and you must not fill them yourself.
-6. When the goal is met, call finish with success=true and a one-paragraph summary of what changed. If it cannot be met, call finish with success=false and the reason.
-7. Be efficient: do not re-read the page when nothing could have changed, and do not repeat an action that already failed the same way twice.
-8. You can see the whole browser, not just your tab: list_tabs, search_tabs, switch_tab, group_tabs, close_tabs, save_session. Never close tabs you were not asked to close; closes stay undoable for 60 seconds and your own working tab is protected.
+6. Use the control that matches the widget: select_option for a native dropdown, check for a checkbox or radio, hover to open a menu, press_key for Enter/Escape/Tab. upload_file can only attach a document already stored in the vault — if the user must pick the file, ask.
+7. When a page is slow, call wait_for with "selector", "text" or "quiet" instead of guessing with wait.
+8. When the goal is met, call finish with success=true and a one-paragraph summary of what changed. If it cannot be met, call finish with success=false and the reason.
+9. Be efficient: do not re-read the page when nothing could have changed, and do not repeat an action that already failed the same way twice.
+10. You can see the whole browser, not just your tab: list_tabs, search_tabs, switch_tab, group_tabs, close_tabs, save_session. Never close tabs you were not asked to close; closes stay undoable for 60 seconds and your own working tab is protected.
 
 ${MODE_NOTES[mode]}`
 }

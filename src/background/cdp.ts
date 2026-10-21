@@ -100,5 +100,8 @@ export async function cdpAct(
     if (text === undefined) throw new Error('CDP type needs the text.')
     return cdpType(tabId, text, submit ?? false)
   }
-  return cdpScroll(tabId, request.direction, Math.round((request.amount ?? 0.8) * 600))
+  if (request.type === 'scroll') {
+    return cdpScroll(tabId, request.direction, Math.round((request.amount ?? 0.8) * 600))
+  }
+  throw new Error(`The trusted-input path has no handler for "${request.type}".`)
 }

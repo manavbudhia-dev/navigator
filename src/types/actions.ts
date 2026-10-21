@@ -5,10 +5,27 @@ import type { ElementRole, ElementSelector } from './pageState'
  * Elements are addressed by the index shown in the page-state spec lines,
  * so the LLM never needs selectors.
  */
+/**
+ * A file handed to an `<input type=file>`. Navigator stores profile documents
+ * as text, so an upload is always built from that text — a real PDF has to be
+ * picked by the person sitting in front of the browser.
+ */
+export interface UploadedFile {
+  name: string
+  mime: string
+  text: string
+}
+
 export type ActRequest =
   | { type: 'click'; index: number }
   | { type: 'type'; index: number; text: string; submit?: boolean }
   | { type: 'scroll'; direction: 'down' | 'up'; amount?: number; index?: number }
+  | { type: 'hover'; index: number }
+  | { type: 'press_key'; key: string; index?: number }
+  | { type: 'select'; index: number; value: string }
+  | { type: 'check'; index: number; checked: boolean }
+  | { type: 'upload'; index: number; file: UploadedFile }
+  | { type: 'drag'; fromIndex: number; toIndex: number }
 
 /**
  * What an action actually touched, kept so a recipe can find the same control
