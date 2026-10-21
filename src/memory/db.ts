@@ -27,6 +27,32 @@ export interface VaultRow {
   iv: string
 }
 
+/** One research run minus its sources, which live in their own table. */
+export interface ResearchRunRow {
+  id: string
+  createdAt: number
+  question: string
+  depth: string
+  answer: string
+  brief: string[]
+  citations: unknown[]
+  clusters: unknown[]
+  contradictions: unknown[]
+  discarded: unknown[]
+  gaps: string[]
+  rounds: number
+  promptTokens: number
+  completionTokens: number
+}
+
+/** One gathered source note (spec §7), keyed by run + url. */
+export interface ResearchNoteRow {
+  id: string
+  runId: string
+  url: string
+  note: unknown
+}
+
 /**
  * Local persistence. IndexedDB is available in both the service worker and
  * the side panel, so every context reads the same settings. Later batches
@@ -36,6 +62,8 @@ export class NavigatorDB extends Dexie {
   settings!: Table<SettingRow, string>
   audit!: Table<AuditRow, number>
   vault!: Table<VaultRow, string>
+  researchRuns!: Table<ResearchRunRow, string>
+  researchNotes!: Table<ResearchNoteRow, string>
 
   constructor() {
     super('navigator')
@@ -50,6 +78,13 @@ export class NavigatorDB extends Dexie {
       settings: 'key',
       audit: '++id, at, tool',
       vault: 'id, updatedAt',
+    })
+    this.version(4).stores({
+      settings: 'key',
+      audit: '++id, at, tool',
+      vault: 'id, updatedAt',
+      researchRuns: 'id, createdAt',
+      researchNotes: 'id, runId, url',
     })
   }
 }

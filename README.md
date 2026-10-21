@@ -36,6 +36,8 @@ node scripts/overlay-check.mjs     # renders the on-page element map + action hi
 node scripts/history-shot.mjs      # seeds the audit log and screenshots the History + Agent tabs (needs `pnpm dev`)
 node scripts/form-check.mjs        # classifies + fills the fixture form end to end in headless Chrome, then asserts the blocked fields stayed empty (needs `pnpm dev`)
 node scripts/profiles-shot.mjs     # walks the Profiles tab: create vault, edit profile, lock, unlock, and screenshots each state (needs `pnpm dev`)
+node scripts/research-check.mjs    # runs the whole research pipeline over fixture pages in headless Chrome: plan, gather, score, synthesise, export, store (needs `pnpm dev`)
+node scripts/research-shot.mjs     # seeds two finished reports and walks the Research tab: report, hover sources, export, copy, tab budget, past runs (needs `pnpm dev`)
 ```
 
 ### Load the extension in Chrome
@@ -74,10 +76,11 @@ src/
   styles/            Tailwind entry point + design tokens
 ```
 
-Later batches add `agent/` (planner + executor loop), `llm/` (provider abstraction),
-`tools/` (registry + executor), `memory/` (Dexie + crypto + profile vault), `safety/` (risk scorer,
-guard), `prompts/` (system prompt templates), `forms/` (field classifier + fill planner),
-`research/` and `tabs/` (research engine, tab manager).
+Also under `src/`: `agent/` (planner + executor loop), `llm/` (provider abstraction),
+`tools/` (registry + executor), `memory/` (Dexie + crypto + profile vault + research store),
+`safety/` (risk scorer, guard), `prompts/` (system prompt templates), `forms/` (field classifier +
+fill planner), and `research/` (plan → gather → synthesise pipeline, exports and follow-up retrieval).
+Batch 9 adds `tabs/` (tab manager).
 
 ## Permissions — why each one
 
@@ -121,6 +124,34 @@ They are outlined in red on the page so you can see what is left, and the tool r
 `label <- profileKey` back to the model — the values themselves never enter the transcript. The
 form is never submitted by `fill_form`.
 
+## Feature B — research engine
+
+Ask a question in the **Research** tab and pick a depth: quick (3-4 sub-questions), standard
+(4-6) or deep (5-8 plus a second gather round). Navigator then:
+
+1. **Plans** — decomposes the question into sub-questions and search queries (model plan, or a
+   fixed set of research angles when no model is configured).
+2. **Gathers** — opens background tabs through one bounded queue (default 4, hard ceiling 8,
+   adjustable in the tab), reads each page's main content, byline and date, and ranks the results
+   page itself so social chrome, login walls and tracking URLs are never followed.
+3. **Scores before it spends** — a keyword gate discards off-topic pages before any token is paid;
+   the cheap model then rates relevance and credibility, and anything below **0.4** is dropped and
+   reported as dropped.
+4. **Synthesises** — map-reduce: summarise each source, cluster the claims, and compose an answer
+   with inline `[1][2]` citations. Citation numbers are validated, so a number the engine never
+   issued cannot appear in the report.
+5. **Flags disagreements** — when sources contradict each other both sides are printed with their
+   own citations. The engine never picks a side silently.
+
+Every sentence can be hovered to see which sources back it (the model's own markers when it left
+them, content matching otherwise). The report exports as Markdown, comparison table, CSV, JSON —
+shaped by an optional output schema — or a bullet brief, to the clipboard or a download. Follow-up
+questions are answered from the stored corpus only, never by re-reading the web, and past runs
+reopen from IndexedDB with their sources intact.
+
+Page text is treated as untrusted everywhere: it is fenced and stripped by the same sanitizer the
+agent loop uses before it reaches a prompt.
+
 ---
 
 ## Roadmap
@@ -134,8 +165,8 @@ form is never submitted by `fill_form`.
 | 5     | Agent loop: planner/executor, loop detection, history compaction, kill switch | done |
 | 6     | Side panel UX: live step timeline, approval cards, on-page element-map overlay, action highlight, History tab | done |
 | 7     | Feature A: smart form filler + encrypted profile vault                  | done |
-| 8     | Feature B: research engine                                              | next |
-| 9     | Feature C: tab manager                                                  | — |
+| 8     | Feature B: research engine                                              | done |
+| 9     | Feature C: tab manager                                                  | next |
 | 10    | Recipes, audit log, cost meter, Playwright E2E                          | — |
 
 ## Safety model

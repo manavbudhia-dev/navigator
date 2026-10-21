@@ -5,6 +5,7 @@ import { AgentPanel } from './panels/AgentPanel'
 import { HistoryPanel } from './panels/HistoryPanel'
 import { PlaceholderPanel } from './panels/PlaceholderPanel'
 import { ProfilesPanel } from './panels/ProfilesPanel'
+import { ResearchPanel } from './panels/ResearchPanel'
 import { SettingsPanel } from './panels/SettingsPanel'
 import { useVault } from './useVault'
 import { cn } from '@/lib/utils'
@@ -20,8 +21,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 type ViewId = TabId | 'settings'
 
-const COMING_IN: Record<Exclude<TabId, 'agent' | 'history' | 'profiles'>, string> = {
-  research: 'Batch 8',
+const COMING_IN: Record<Exclude<TabId, 'agent' | 'history' | 'profiles' | 'research'>, string> = {
   tabs: 'Batch 9',
 }
 
@@ -90,6 +90,8 @@ export default function App() {
           <HistoryPanel />
         ) : view === 'profiles' ? (
           <ProfilesPanel vault={vault} />
+        ) : view === 'research' ? (
+          <ResearchPanel />
         ) : view === 'settings' ? (
           <SettingsPanel />
         ) : (

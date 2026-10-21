@@ -1,4 +1,5 @@
 import { performAct } from './actions'
+import { readArticleWithLinks } from './article'
 import { readFormFields } from './formFields'
 import { highlightElement, markForReview, setOverlay } from './overlay'
 import { buildPageState, getSnapshot } from './perception/pageState'
@@ -70,6 +71,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     response = readOverlay(message.visible, message.highlightIndex, message.review)
   } else if (message.kind === 'get-form-fields') {
     response = { ok: true, fields: readFormFields(document, getSnapshot()) }
+  } else if (message.kind === 'get-article') {
+    response = { ok: true, article: readArticleWithLinks(document) }
   } else {
     const pageState = buildPageState(document, {
       ...DEFAULT_PAGE_STATE_OPTIONS,

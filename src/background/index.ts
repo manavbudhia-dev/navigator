@@ -1,3 +1,4 @@
+import type { ArticlePayload } from '@/research/types'
 import {
   isBackgroundMessage,
   type BackgroundMessage,
@@ -7,12 +8,14 @@ import {
 } from '@/types/messages'
 
 import { handleVaultRequest } from './vaultApi'
+import { researchFollowup, startResearch, stopResearch } from './research'
 import { resolveApproval, resolveQuestion, startTask, stopTask } from './task'
 
 /**
  * Background service worker = agent orchestrator.
  * Batches 1-2 wire up lifecycle + the side panel <-> tab message channel.
- * Batch 5 adds the task router: run/stop/approve/answer live in ./task.
+ * Batch 5 adds the task router, Batch 8 the research router: both live in
+ * their own module and only message plumbing stays here.
  */
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -68,7 +71,7 @@ function control(apply: () => TaskControl): BackgroundResponse {
   }
 }
 
-function handleTaskMessage(message: BackgroundMessage): BackgroundResponse | null {
+function handleControlMessage(message: BackgroundMessage): BackgroundResponse | null {
   switch (message.kind) {
     case 'stop-task':
       return control(stopTask)
@@ -76,17 +79,22 @@ function handleTaskMessage(message: BackgroundMessage): BackgroundResponse | nul
       return control(() => resolveApproval(message.id, message.approved))
     case 'answer-question':
       return control(() => resolveQuestion(message.id, message.answer))
+    case 'stop-research':
+      return control(stopResearch)
     default:
       return null
   }
 }
 
+/** `get-article` is answered by `researchHost` directly, never forwarded here. */
+type ForwardedResponse = Exclude<ContentResponse, { ok: true; article: ArticlePayload }>
+
 async function forwardToActiveTab(message: BackgroundMessage): Promise<BackgroundResponse> {
   const tabId = await getActiveTabId()
 
-  let response: ContentResponse
+  let response: ForwardedResponse
   try {
-    response = (await chrome.tabs.sendMessage(tabId, toContentMessage(message))) as ContentResponse
+    response = (await chrome.tabs.sendMessage(tabId, toContentMessage(message))) as ForwardedResponse
   } catch {
     // No content script listening: the tab was open before install, or Chrome
     // refuses injection (chrome:// pages, the Web Store, PDF viewer, new tab).
@@ -115,10 +123,42 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true
   }
 
-  const taskResponse = handleTaskMessage(message)
-  if (taskResponse !== null) {
-    sendResponse(taskResponse)
+  const controlResponse = handleControlMessage(message)
+  if (controlResponse !== null) {
+    sendResponse(controlResponse)
     return false
+  }
+
+  if (message.kind === 'run-research') {
+    startResearch(message.question, message.depth)
+      .then((result) => {
+        sendResponse({
+          ok: true,
+          accepted: result.ok,
+          ...(result.error !== undefined ? { error: result.error } : {}),
+        } satisfies BackgroundResponse)
+      })
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
+      })
+    return true
+  }
+
+  if (message.kind === 'research-followup') {
+    researchFollowup(message.runId, message.question)
+      .then((result) => {
+        if (result.ok && result.answer !== undefined) {
+          sendResponse({ ok: true, answer: result.answer } satisfies BackgroundResponse)
+          return
+        }
+        sendResponse({ ok: false, error: result.error ?? 'The follow-up answer failed.' } satisfies BackgroundResponse)
+      })
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
+      })
+    return true
   }
 
   if (message.kind === 'vault') {
