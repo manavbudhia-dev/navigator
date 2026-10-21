@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Form fixture</title>
+    <style>
+      body {
+        font: 14px system-ui;
+        margin: 24px;
+      }
+      form {
+        display: grid;
+        gap: 10px;
+        max-width: 520px;
+      }
+      label {
+        font-weight: 600;
+      }
+      input,
+      select,
+      textarea {
+        padding: 6px;
+        border: 1px solid #bbb;
+        border-radius: 6px;
+        font: inherit;
+      }
+      .row {
+        display: grid;
+        gap: 4px;
+      }
+      .inline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .inline label {
+        font-weight: 400;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Apply for the Frontend Engineer role</h1>
+
+    <form id="apply">
+      <div class="row">
+        <label for="first">First name</label>
+        <input id="first" name="first_name" type="text" required />
+      </div>
+
+      <div class="row">
+        <label for="last">Last name</label>
+        <input id="last" name="last_name" type="text" required />
+      </div>
+
+      <div class="row">
+        <label for="mail">Email address</label>
+        <input id="mail" name="email" type="email" placeholder="you@example.com" required />
+      </div>
+
+      <div class="row">
+        <label for="home-phone">Home phone</label>
+        <input id="home-phone" name="home_phone" type="tel" />
+      </div>
+
+      <div class="row">
+        <label for="work-phone">Work phone</label>
+        <input id="work-phone" name="work_phone" type="tel" />
+      </div>
+
+      <div class="row">
+        <label for="birth">Date of birth</label>
+        <input id="birth" name="dob" type="text" placeholder="MM/DD/YYYY" />
+      </div>
+
+      <div class="row">
+        <label for="country">Country of residence</label>
+        <select id="country" name="country">
+          <option value="">Select…</option>
+          <option>United States</option>
+          <option>India</option>
+          <option>Germany</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="skills">Key skills</label>
+        <input id="skills" name="skills" type="text" maxlength="20" />
+      </div>
+
+      <div class="row">
+        <label for="letter">Cover letter</label>
+        <textarea id="letter" name="cover_letter" rows="3"></textarea>
+      </div>
+
+      <div class="row">
+        <label for="mystery">Something the profile has no answer for</label>
+        <input id="mystery" name="mystery" type="text" />
+      </div>
+
+      <div class="row">
+        <label for="card">Card number</label>
+        <input id="card" name="card_number" type="text" autocomplete="cc-number" />
+      </div>
+
+      <div class="row">
+        <label for="pw">Create a password</label>
+        <input id="pw" name="password" type="password" />
+      </div>
+
+      <div class="row">
+        <label for="otp">One-time code</label>
+        <input id="otp" name="otp" type="text" />
+      </div>
+
+      <div class="row">
+        <label for="cv">Upload your CV file</label>
+        <input id="cv" name="cv" type="file" />
+      </div>
+
+      <div class="inline">
+        <input id="robot" name="robot" type="checkbox" />
+        <label for="robot">I'm not a robot</label>
+      </div>
+
+      <div class="inline">
+        <input id="terms" name="terms" type="checkbox" />
+        <label for="terms">I agree to the terms of service</label>
+      </div>
+
+      <div class="inline">
+        <button type="submit" id="send">Submit application</button>
+      </div>
+    </form>
+
+    <script>
+      window.__submissions = 0
+      document.getElementById('apply').addEventListener('submit', (event) => {
+        event.preventDefault()
+        window.__submissions += 1
+      })
+    </script>
+  </body>
+</html>

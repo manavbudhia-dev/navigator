@@ -47,6 +47,9 @@ const BASE_RISK: Record<string, RiskLevel> = {
   scroll: 'low',
   click: 'medium',
   type_text: 'medium',
+  // Writes many fields at once, but never submits and never touches the
+  // hard-blocked kinds — the filler refuses those before it starts.
+  fill_form: 'medium',
 }
 
 const PAYMENT = /\b(checkout|pay now|place order|buy now|purchase|subscribe|proceed to payment)\b|\bcard (number|cvv|details)\b|\bbilling address\b/i

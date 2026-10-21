@@ -34,6 +34,8 @@ node scripts/perception-check.mjs  # runs the perception layer on a fixture page
 node scripts/actions-check.mjs     # runs the action executor (click/type/select/scroll) on the fixture (needs `pnpm dev`)
 node scripts/overlay-check.mjs     # renders the on-page element map + action highlight in headless Chrome (needs `pnpm dev`)
 node scripts/history-shot.mjs      # seeds the audit log and screenshots the History + Agent tabs (needs `pnpm dev`)
+node scripts/form-check.mjs        # classifies + fills the fixture form end to end in headless Chrome, then asserts the blocked fields stayed empty (needs `pnpm dev`)
+node scripts/profiles-shot.mjs     # walks the Profiles tab: create vault, edit profile, lock, unlock, and screenshots each state (needs `pnpm dev`)
 ```
 
 ### Load the extension in Chrome
@@ -73,8 +75,9 @@ src/
 ```
 
 Later batches add `agent/` (planner + executor loop), `llm/` (provider abstraction),
-`tools/` (registry + executor), `memory/` (Dexie + embeddings), `safety/` (risk scorer, guard),
-`prompts/` (system prompt templates) and `features/` (form filler, research engine, tab manager).
+`tools/` (registry + executor), `memory/` (Dexie + crypto + profile vault), `safety/` (risk scorer,
+guard), `prompts/` (system prompt templates), `forms/` (field classifier + fill planner),
+`research/` and `tabs/` (research engine, tab manager).
 
 ## Permissions — why each one
 
@@ -100,6 +103,24 @@ put a real API key there or commit it. Runtime configuration (base URL, API key,
 temperature, max tokens, context window) is edited in the Settings tab and stored locally in the
 browser. Keys never leave your machine except in direct calls to the endpoint you configured.
 
+## Profile vault and form filling
+
+Profiles (name, address, links, work history, skills, canned answers) live in IndexedDB as
+AES-GCM envelopes. The key is derived from your passphrase with PBKDF2-SHA256 at 310,000 rounds
+and is held **only in the service worker's memory** — locking the vault, or Chrome recycling the
+worker, makes the rows unreadable again. There is no recovery passphrase.
+
+`fill_form` classifies each field from its label, name, id, placeholder and nearby text. Fields it
+is sure about are typed straight from the vault; a field with two plausible values is offered to
+the small model as a multiple-choice question that contains **only those candidate values**, never
+the whole profile. Dropdown answers are fuzzy-matched to the option text the page actually offers,
+dates are rewritten into the format the field asks for, and long values are trimmed to `maxlength`.
+
+Payment, password, OTP, CAPTCHA, consent, file-upload and government-id fields are never filled.
+They are outlined in red on the page so you can see what is left, and the tool reports only
+`label <- profileKey` back to the model — the values themselves never enter the transcript. The
+form is never submitted by `fill_form`.
+
 ---
 
 ## Roadmap
@@ -112,8 +133,8 @@ browser. Keys never leave your machine except in direct calls to the endpoint yo
 | 4     | Tools + safety: registry, executor, action queue, risk scorer, CDP fallback | done |
 | 5     | Agent loop: planner/executor, loop detection, history compaction, kill switch | done |
 | 6     | Side panel UX: live step timeline, approval cards, on-page element-map overlay, action highlight, History tab | done |
-| 7     | Feature A: smart form filler + encrypted profile vault                  | next |
-| 8     | Feature B: research engine                                              | — |
+| 7     | Feature A: smart form filler + encrypted profile vault                  | done |
+| 8     | Feature B: research engine                                              | next |
 | 9     | Feature C: tab manager                                                  | — |
 | 10    | Recipes, audit log, cost meter, Playwright E2E                          | — |
 

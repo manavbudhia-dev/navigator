@@ -6,7 +6,9 @@
 
 import type { ActRequest, ActResult } from './actions'
 import type { AgentMode } from './agent'
+import type { FormFieldView } from '@/content/formFields'
 import type { PageState } from './pageState'
+import type { VaultReply, VaultRequest } from './vault'
 
 export type PageMeta = {
   url: string
@@ -26,11 +28,15 @@ export type BackgroundMessage =
   | { kind: 'stop-task' }
   | { kind: 'approve-action'; id: string; approved: boolean }
   | { kind: 'answer-question'; id: string; answer: string }
-  | { kind: 'set-overlay'; visible?: boolean; highlightIndex?: number }
+  | { kind: 'set-overlay'; visible?: boolean; highlightIndex?: number; review?: number[] }
+  | { kind: 'get-form-fields-active-tab' }
+  | { kind: 'vault'; request: VaultRequest }
 
 export type BackgroundResponse =
   | { ok: true; meta: PageMeta }
   | { ok: true; pageState: PageState }
+  | { ok: true; fields: FormFieldView[] }
+  | { ok: true; vault: VaultReply }
   | { ok: true; accepted: boolean; error?: string }
   | { ok: false; error: string }
   | ActResult
@@ -40,11 +46,13 @@ export type ContentMessage =
   | { kind: 'ping' }
   | { kind: 'get-page-state'; includeOffViewport?: boolean }
   | { kind: 'act'; action: ActRequest }
-  | { kind: 'overlay'; visible?: boolean; highlightIndex?: number }
+  | { kind: 'overlay'; visible?: boolean; highlightIndex?: number; review?: number[] }
+  | { kind: 'get-form-fields' }
 
 export type ContentResponse =
   | { ok: true; meta: PageMeta }
   | { ok: true; pageState: PageState }
+  | { ok: true; fields: FormFieldView[] }
   | ActResult
 
 export function isBackgroundMessage(value: unknown): value is BackgroundMessage {
@@ -59,7 +67,9 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
       value.kind === 'stop-task' ||
       value.kind === 'approve-action' ||
       value.kind === 'answer-question' ||
-      value.kind === 'set-overlay')
+      value.kind === 'set-overlay' ||
+      value.kind === 'get-form-fields-active-tab' ||
+      value.kind === 'vault')
   )
 }
 
@@ -68,6 +78,10 @@ export function isContentMessage(value: unknown): value is ContentMessage {
     typeof value === 'object' &&
     value !== null &&
     'kind' in value &&
-    (value.kind === 'ping' || value.kind === 'get-page-state' || value.kind === 'act' || value.kind === 'overlay')
+    (value.kind === 'ping' ||
+      value.kind === 'get-page-state' ||
+      value.kind === 'act' ||
+      value.kind === 'overlay' ||
+      value.kind === 'get-form-fields')
   )
 }

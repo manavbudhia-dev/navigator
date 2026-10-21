@@ -6,6 +6,7 @@ import {
   type ContentResponse,
 } from '@/types/messages'
 
+import { handleVaultRequest } from './vaultApi'
 import { resolveApproval, resolveQuestion, startTask, stopTask } from './task'
 
 /**
@@ -49,8 +50,10 @@ function toContentMessage(message: BackgroundMessage): ContentMessage {
       kind: 'overlay',
       ...(message.visible !== undefined ? { visible: message.visible } : {}),
       ...(message.highlightIndex !== undefined ? { highlightIndex: message.highlightIndex } : {}),
+      ...(message.review !== undefined ? { review: message.review } : {}),
     }
   }
+  if (message.kind === 'get-form-fields-active-tab') return { kind: 'get-form-fields' }
   throw new Error(`Not a tab message: ${message.kind}`)
 }
 
@@ -116,6 +119,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (taskResponse !== null) {
     sendResponse(taskResponse)
     return false
+  }
+
+  if (message.kind === 'vault') {
+    handleVaultRequest(message.request)
+      .then((vault) => {
+        sendResponse({ ok: true, vault } satisfies BackgroundResponse)
+      })
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
+      })
+    return true
   }
 
   forwardToActiveTab(message)

@@ -21,6 +21,8 @@ const CSS = `
 #${LAYER_ID} .nav-box { position: absolute; box-sizing: border-box; border: 1.5px solid #6366f1; background: rgba(99, 102, 241, 0.08); }
 #${LAYER_ID} .nav-tag { position: absolute; left: 0; top: -8px; min-width: 16px; padding: 0 3px; border-radius: 3px; background: #6366f1; color: #fff; font: 700 10px/16px ui-sans-serif, system-ui, sans-serif; text-align: center; }
 #${LAYER_ID} .nav-pulse { position: absolute; box-sizing: border-box; border: 3px solid #f59e0b; animation: nav-pulse 1.2s ease-out infinite; }
+#${LAYER_ID} .nav-review { position: absolute; box-sizing: border-box; border: 2px dashed #dc2626; background: rgba(220, 38, 38, 0.08); }
+#${LAYER_ID} .nav-review .nav-tag { background: #dc2626; }
 @keyframes nav-pulse { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); } 100% { box-shadow: 0 0 0 16px rgba(245, 158, 11, 0); } }
 `
 
@@ -67,6 +69,11 @@ function boxStyle(box: BoundingBox): string {
   return `left: ${box.x}px; top: ${box.y}px; width: ${box.width}px; height: ${box.height}px`
 }
 
+/** The overlay works from the last Page State snapshot; take one if nobody has yet. */
+function ensureSnapshot(doc: Document): void {
+  if (getSnapshot().length === 0) buildPageState(doc, DEFAULT_PAGE_STATE_OPTIONS)
+}
+
 export function setOverlay(visible: boolean): ActResult {
   const doc = document
   ensureStyle(doc)
@@ -76,7 +83,7 @@ export function setOverlay(visible: boolean): ActResult {
     return { ok: true, detail: 'Overlay off' }
   }
 
-  if (getSnapshot().length === 0) buildPageState(doc, DEFAULT_PAGE_STATE_OPTIONS)
+  ensureSnapshot(doc)
   const rects = mappedRects(doc)
   if (rects.length === 0) return { ok: false, error: 'No visible elements to highlight on this page.' }
 
@@ -125,4 +132,41 @@ export function highlightElement(index: number): ActResult {
   layer.append(pulse)
   setTimeout(() => pulse.remove(), HIGHLIGHT_MS)
   return { ok: true, detail: `Highlighting element ${index} (${entry.tag})` }
+}
+
+/**
+ * Red dashed boxes on fields the agent deliberately did not touch — payment,
+ * consent, captcha, upload — so the human knows what is left (spec §6).
+ */
+export function markForReview(indices: number[]): ActResult {
+  const doc = document
+  ensureStyle(doc)
+  const layer = layerOf(doc, true)
+  if (!layer) return { ok: false, error: 'This page has no body element to attach the overlay to.' }
+
+  for (const existing of layer.querySelectorAll('.nav-review')) existing.remove()
+
+  let marked = 0
+  ensureSnapshot(doc)
+  const snapshot = getSnapshot()
+  for (const index of indices) {
+    const entry = snapshot.find((el) => el.index === index)
+    if (!entry) continue
+    const resolved = resolveSelector(doc, entry.selector)
+    if (!resolved) continue
+    const box = rectOf(resolved.element)
+    if (box.width <= 0 || box.height <= 0) continue
+
+    const el = doc.createElement('div')
+    el.className = 'nav-review'
+    el.style.cssText = boxStyle(box)
+    const tag = doc.createElement('span')
+    tag.className = 'nav-tag'
+    tag.textContent = '!'
+    el.append(tag)
+    layer.append(el)
+    marked += 1
+  }
+
+  return { ok: true, detail: `Marked ${marked} field${marked === 1 ? '' : 's'} for review` }
 }

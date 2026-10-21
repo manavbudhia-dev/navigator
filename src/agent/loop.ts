@@ -13,7 +13,7 @@ import type { ModelConfig } from '@/llm/config'
 import type { ChatMessage, CompletionRequest, CompletionResult } from '@/llm/types'
 import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
-import type { ToolHost } from '@/tools/types'
+import type { ToolContext, ToolHost, VaultAccess } from '@/tools/types'
 import type { ToolRegistry } from '@/tools/registry'
 import type { RiskLevel } from '@/safety/risk'
 
@@ -66,6 +66,8 @@ export interface AgentRunOptions {
   config: ModelConfig
   hooks: AgentHooks
   signal: AbortSignal
+  /** Passed straight to tools that need it (fill_form). */
+  vault?: VaultAccess
   maxSteps?: number
   completeFn?: CompleteFn
   newId?: () => string
@@ -104,7 +106,18 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
   const newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10))
   const maxSteps = options.maxSteps ?? 40
   const queue = new ActionQueue()
-  const ctx = { host, tabId, signal }
+  const ctx: ToolContext = {
+    host,
+    tabId,
+    signal,
+    ...(options.vault ? { vault: options.vault } : {}),
+    complete: async (messages, kind) =>
+      completeFn(
+        { messages, ...(kind === 'small' ? { maxTokens: 512 } : {}) },
+        config,
+        { kind, signal },
+      ),
+  }
 
   const messages: ChatMessage[] = [
     { role: 'system', content: buildSystemPrompt(mode) },

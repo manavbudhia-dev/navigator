@@ -19,6 +19,14 @@ export interface AuditRow {
   detail: string
 }
 
+/** An encrypted profile: nothing about its contents is readable while locked. */
+export interface VaultRow {
+  id: string
+  updatedAt: number
+  cipher: string
+  iv: string
+}
+
 /**
  * Local persistence. IndexedDB is available in both the service worker and
  * the side panel, so every context reads the same settings. Later batches
@@ -27,6 +35,7 @@ export interface AuditRow {
 export class NavigatorDB extends Dexie {
   settings!: Table<SettingRow, string>
   audit!: Table<AuditRow, number>
+  vault!: Table<VaultRow, string>
 
   constructor() {
     super('navigator')
@@ -36,6 +45,11 @@ export class NavigatorDB extends Dexie {
     this.version(2).stores({
       settings: 'key',
       audit: '++id, at, tool',
+    })
+    this.version(3).stores({
+      settings: 'key',
+      audit: '++id, at, tool',
+      vault: 'id, updatedAt',
     })
   }
 }

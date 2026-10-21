@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { highlightElement, setOverlay } from './overlay'
+import { highlightElement, markForReview, setOverlay } from './overlay'
 import { buildPageState } from './perception/pageState'
 import { mockRects, rect, type FakeRect } from './perception/testUtils'
 import { DEFAULT_PAGE_STATE_OPTIONS } from '@/types/pageState'
@@ -110,5 +110,53 @@ describe('highlightElement', () => {
     vi.restoreAllMocks()
 
     expect(highlightElement(0).ok).toBe(false)
+  })
+})
+
+describe('markForReview', () => {
+  it('draws one red box per blocked field, tagged with an exclamation mark', () => {
+    document.body.innerHTML = '<input id="a" /><input id="b" /><input id="c" />'
+    const inputs = Array.from(document.querySelectorAll('input'))
+    mockRects(
+      new Map<Element, FakeRect>([
+        [inputs[0]!, rect(0, 0)],
+        [inputs[1]!, rect(0, 40)],
+        [inputs[2]!, rect(0, 80)],
+      ]),
+    )
+    snapshot()
+    setOverlay(true)
+
+    const result = markForReview([0, 2])
+    const marks = Array.from(document.querySelectorAll<HTMLElement>('#navigator-overlay .nav-review'))
+    expect(result).toEqual({ ok: true, detail: 'Marked 2 fields for review' })
+    expect(marks).toHaveLength(2)
+    expect(marks[0]?.querySelector('.nav-tag')?.textContent).toBe('!')
+    expect(marks[0]?.style.left).toBe('0px')
+  })
+
+  it('replaces the previous marks instead of stacking them', () => {
+    document.body.innerHTML = '<input id="a" /><input id="b" />'
+    const inputs = Array.from(document.querySelectorAll('input'))
+    mockRects(
+      new Map<Element, FakeRect>([
+        [inputs[0]!, rect(0, 0)],
+        [inputs[1]!, rect(0, 40)],
+      ]),
+    )
+    snapshot()
+    markForReview([0, 1])
+    markForReview([1])
+
+    expect(document.querySelectorAll('#navigator-overlay .nav-review')).toHaveLength(1)
+  })
+
+  it('ignores an index that is not on the page any more', () => {
+    document.body.innerHTML = '<input id="a" />'
+    mockRects(new Map<Element, FakeRect>([[document.getElementById('a')!, rect(0, 0)]]))
+    snapshot()
+
+    expect(markForReview([0, 42])).toEqual({ ok: true, detail: 'Marked 1 field for review' })
+    expect(document.querySelectorAll('#navigator-overlay .nav-review')).toHaveLength(1)
   })
 })

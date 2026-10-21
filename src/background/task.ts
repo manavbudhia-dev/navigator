@@ -8,6 +8,7 @@ import type { TaskEvent } from '@/types/task'
 import type { AgentMode } from '@/types/agent'
 
 import { createToolHost } from './host'
+import { vault } from './vaultApi'
 
 /**
  * One task at a time, owned by the service worker. The side panel controls
@@ -92,6 +93,7 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
       config,
       hooks,
       signal: kill.signal,
+      vault,
     })
       .then((outcome) => {
         broadcast({

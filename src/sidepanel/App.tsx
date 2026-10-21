@@ -4,7 +4,9 @@ import { Bot, Clock, Copy, Search, Settings, Sparkle, UserRound, X } from 'lucid
 import { AgentPanel } from './panels/AgentPanel'
 import { HistoryPanel } from './panels/HistoryPanel'
 import { PlaceholderPanel } from './panels/PlaceholderPanel'
+import { ProfilesPanel } from './panels/ProfilesPanel'
 import { SettingsPanel } from './panels/SettingsPanel'
+import { useVault } from './useVault'
 import { cn } from '@/lib/utils'
 
 const TABS = [
@@ -18,14 +20,14 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 type ViewId = TabId | 'settings'
 
-const COMING_IN: Record<Exclude<TabId, 'agent' | 'history'>, string> = {
+const COMING_IN: Record<Exclude<TabId, 'agent' | 'history' | 'profiles'>, string> = {
   research: 'Batch 8',
   tabs: 'Batch 9',
-  profiles: 'Batch 7',
 }
 
 export default function App() {
   const [view, setView] = useState<ViewId>('agent')
+  const vault = useVault()
 
   const activeTab = TABS.find((tab) => tab.id === view)
 
@@ -86,6 +88,8 @@ export default function App() {
           <AgentPanel onOpenHistory={() => setView('history')} />
         ) : view === 'history' ? (
           <HistoryPanel />
+        ) : view === 'profiles' ? (
+          <ProfilesPanel vault={vault} />
         ) : view === 'settings' ? (
           <SettingsPanel />
         ) : (

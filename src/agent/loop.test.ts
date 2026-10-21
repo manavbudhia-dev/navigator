@@ -68,6 +68,10 @@ function makeHost() {
       return 1
     },
     async sleep() {},
+    async formFields() {
+      return []
+    },
+    review() {},
   }
   return { host, acts }
 }

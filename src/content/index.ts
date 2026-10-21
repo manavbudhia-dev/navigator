@@ -1,6 +1,7 @@
 import { performAct } from './actions'
-import { highlightElement, setOverlay } from './overlay'
-import { buildPageState } from './perception/pageState'
+import { readFormFields } from './formFields'
+import { highlightElement, markForReview, setOverlay } from './overlay'
+import { buildPageState, getSnapshot } from './perception/pageState'
 import {
   isContentMessage,
   type ContentResponse,
@@ -28,17 +29,27 @@ function readPageMeta(): PageMeta {
   }
 }
 
-function readOverlay(visible: boolean | undefined, highlightIndex: number | undefined): ContentResponse {
+function readOverlay(
+  visible: boolean | undefined,
+  highlightIndex: number | undefined,
+  review: number[] | undefined,
+): ContentResponse {
   const details: string[] = []
   let error: string | null = null
 
+  // setOverlay rebuilds the layer, so it goes first; the marks below paint on top.
+  if (visible !== undefined) {
+    const result = setOverlay(visible)
+    if (result.ok) details.push(result.detail)
+    else error = error ?? result.error
+  }
   if (highlightIndex !== undefined) {
     const result = highlightElement(highlightIndex)
     if (result.ok) details.push(result.detail)
     else error = result.error
   }
-  if (visible !== undefined) {
-    const result = setOverlay(visible)
+  if (review !== undefined) {
+    const result = markForReview(review)
     if (result.ok) details.push(result.detail)
     else error = error ?? result.error
   }
@@ -56,7 +67,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   } else if (message.kind === 'act') {
     response = performAct(message.action)
   } else if (message.kind === 'overlay') {
-    response = readOverlay(message.visible, message.highlightIndex)
+    response = readOverlay(message.visible, message.highlightIndex, message.review)
+  } else if (message.kind === 'get-form-fields') {
+    response = { ok: true, fields: readFormFields(document, getSnapshot()) }
   } else {
     const pageState = buildPageState(document, {
       ...DEFAULT_PAGE_STATE_OPTIONS,

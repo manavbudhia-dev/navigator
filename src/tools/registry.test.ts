@@ -32,6 +32,7 @@ interface Calls {
   acts: ActRequest[]
   navigations: string[]
   sleeps: number[]
+  reviews: number[][]
 }
 
 function fakeContext(calls: Calls, actResult: ActResult = { ok: true, detail: 'Clicked' }): ToolContext {
@@ -52,6 +53,12 @@ function fakeContext(calls: Calls, actResult: ActResult = { ok: true, detail: 'C
     },
     async sleep(ms) {
       calls.sleeps.push(ms)
+    },
+    async formFields() {
+      return []
+    },
+    review(_tabId, indices) {
+      calls.reviews.push(indices)
     },
   }
   const controller = new AbortController()
@@ -74,6 +81,7 @@ describe('ToolRegistry', () => {
       'wait',
       'ask_user',
       'finish',
+      'fill_form',
     ])
     const click = defs.find((d) => d.name === 'click')!
     expect(click.description.length).toBeGreaterThan(10)
@@ -94,14 +102,14 @@ describe('ToolRegistry', () => {
   })
 
   it('executes click through the host', async () => {
-    const calls: Calls = { acts: [], navigations: [], sleeps: [] }
+    const calls: Calls = { acts: [], navigations: [], sleeps: [], reviews: [] }
     const result = await build().execute('click', { index: 7 }, fakeContext(calls))
     expect(result).toEqual({ ok: true, content: 'Clicked' })
     expect(calls.acts).toEqual([{ type: 'click', index: 7 }])
   })
 
   it('surfaces act failures as tool errors', async () => {
-    const calls: Calls = { acts: [], navigations: [], sleeps: [] }
+    const calls: Calls = { acts: [], navigations: [], sleeps: [], reviews: [] }
     const ctx = fakeContext(calls, { ok: false, error: 'Element 7 is gone.' })
     const result = await build().execute('click', { index: 7 }, ctx)
     expect(result.ok).toBe(false)
@@ -109,14 +117,14 @@ describe('ToolRegistry', () => {
   })
 
   it('normalizes navigation URLs and adds https when missing', async () => {
-    const calls: Calls = { acts: [], navigations: [], sleeps: [] }
+    const calls: Calls = { acts: [], navigations: [], sleeps: [], reviews: [] }
     await build().execute('navigate', { url: 'example.com/x' }, fakeContext(calls))
     expect(calls.navigations).toEqual(['https://example.com/x'])
     expect(normalizeUrl('http://localhost:8000')).toBe('http://localhost:8000')
   })
 
   it('returns the full page text for read_page', async () => {
-    const calls: Calls = { acts: [], navigations: [], sleeps: [] }
+    const calls: Calls = { acts: [], navigations: [], sleeps: [], reviews: [] }
     const result = await build().execute('read_page', {}, fakeContext(calls))
     expect(result.content).toContain('URL: https://example.com')
     expect(result.content).toContain('[0]<a')
@@ -124,7 +132,7 @@ describe('ToolRegistry', () => {
   })
 
   it('keeps host exceptions inside the tool result', async () => {
-    const ctx = fakeContext({ acts: [], navigations: [], sleeps: [] })
+    const ctx = fakeContext({ acts: [], navigations: [], sleeps: [], reviews: [] })
     vi.spyOn(ctx.host, 'pageState').mockRejectedValue(new Error('no content script'))
     const result = await build().execute('read_page', {}, ctx)
     expect(result).toEqual({ ok: false, content: 'no content script' })

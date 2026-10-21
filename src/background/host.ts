@@ -52,6 +52,12 @@ export function createToolHost(): ToolHost {
       return response.pageState
     },
 
+    async formFields(tabId) {
+      const response = await sendToTab(tabId, { kind: 'get-form-fields' })
+      if (!('fields' in response)) throw new Error('Form field request failed.')
+      return response.fields
+    },
+
     act: runAct,
 
     async navigate(tabId, url) {
@@ -63,6 +69,11 @@ export function createToolHost(): ToolHost {
       const tab = await chrome.tabs.create({ url, active: false })
       if (tab.id === undefined) throw new Error('Chrome refused to open a new tab.')
       return tab.id
+    },
+
+    review(tabId, indices) {
+      const message: ContentMessage = { kind: 'overlay', review: indices }
+      void sendToTab(tabId, message).catch(() => undefined)
     },
 
     sleep(ms, signal) {
