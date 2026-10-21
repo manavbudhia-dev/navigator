@@ -5,10 +5,16 @@ export interface SettingRow {
   value: unknown
 }
 
-/** One row per agent action — who asked, what ran, what decided it (spec §9d). */
+/**
+ * One row per agent action — who asked, what ran, what decided it (spec §9d).
+ * The optional extras are what turns the log from "a list of tool calls" into
+ * evidence: which page, how long, what it cost, and what it looked like after.
+ */
 export interface AuditRow {
   id?: number
   at: number
+  /** Every row written by one task run shares this, so history never has to guess. */
+  runId?: string
   goal: string
   tool: string
   args: Record<string, unknown>
@@ -17,6 +23,15 @@ export interface AuditRow {
   decision: string
   ok: boolean | null
   detail: string
+  /** Page the action was taken on. */
+  url?: string
+  /** Wall-clock duration of the tool call itself. */
+  ms?: number
+  /** Tokens of the LLM turn that asked for this action, charged to its first row. */
+  promptTokens?: number
+  completionTokens?: number
+  /** Downscaled JPEG of the page after the action, as a data URL. */
+  thumb?: string
 }
 
 /** An encrypted profile: nothing about its contents is readable while locked. */
@@ -121,6 +136,17 @@ export class NavigatorDB extends Dexie {
     this.version(5).stores({
       settings: 'key',
       audit: '++id, at, tool',
+      vault: 'id, updatedAt',
+      researchRuns: 'id, createdAt',
+      researchNotes: 'id, runId, url',
+      tabStats: 'urlKey, lastSeenAt',
+      tabIndex: 'urlKey, indexedAt',
+      sessions: 'id, createdAt',
+    })
+    // Audit log (spec §9): rows are grouped by run, not by a time-window guess.
+    this.version(6).stores({
+      settings: 'key',
+      audit: '++id, at, tool, runId',
       vault: 'id, updatedAt',
       researchRuns: 'id, createdAt',
       researchNotes: 'id, runId, url',

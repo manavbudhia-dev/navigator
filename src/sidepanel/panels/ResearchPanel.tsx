@@ -17,6 +17,7 @@ import {
 
 import { StatusPill } from '../components/StatusPill'
 import { useResearchBridge, type FollowupReply } from '../useResearchBridge'
+import { saveTextFile } from '@/lib/download'
 import { layoutAnswer, type SentencePart } from '@/research/citations'
 import {
   downloadName,
@@ -142,7 +143,7 @@ export function ResearchPanel() {
 
   async function handleDownload() {
     if (result === null) return
-    await saveFile(
+    await saveTextFile(
       downloadName(result.question, format),
       formatMeta(format).mime,
       render(result, format, format === 'json' ? schema : undefined),
@@ -757,22 +758,5 @@ async function copyText(text: string): Promise<boolean> {
     }
     area.remove()
     return ok
-  }
-}
-
-/** Save through Chrome's download UI when it exists, otherwise click a blob link. */
-async function saveFile(name: string, mime: string, text: string): Promise<void> {
-  const url = URL.createObjectURL(new Blob([text], { type: mime }))
-  try {
-    if (typeof chrome !== 'undefined' && chrome.downloads !== undefined) {
-      await chrome.downloads.download({ url, filename: name, saveAs: true })
-      return
-    }
-    const link = document.createElement('a')
-    link.href = url
-    link.download = name
-    link.click()
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 }

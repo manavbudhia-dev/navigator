@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, History, RefreshCw } from 'lucide-react'
+import { ChevronDown, Download, History, RefreshCw } from 'lucide-react'
 
+import { saveTextFile, stampedFilename } from '@/lib/download'
+import { buildAuditExport } from '@/memory/export'
 import { formatWhen, loadSessions, type AuditSession, type SessionOutcome } from '@/memory/history'
 import { cn } from '@/lib/utils'
+import { hostOf } from '@/tabs/model'
 import type { AuditRow } from '@/memory/db'
 
 const OUTCOME_STYLES: Record<SessionOutcome, string> = {
@@ -42,38 +45,73 @@ function clip(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat
 }
 
+/** A 320 px picture of the page after the action (spec §9), expandable in place. */
+function Thumb({ src, tool }: { src: string; tool: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen((value) => !value)}
+      aria-expanded={open}
+      aria-label={`${open ? 'Hide' : 'Show'} the screenshot taken after ${tool}`}
+      className="shrink-0 overflow-hidden rounded-md border bg-muted/30"
+    >
+      <img
+        src={src}
+        alt=""
+        className={cn('transition-all', open ? 'max-h-72 w-48 object-cover' : 'h-9 w-14 object-cover')}
+      />
+    </button>
+  )
+}
+
 function StepRow({ row }: { row: AuditRow }) {
+  const site = row.url === undefined ? '' : hostOf(row.url)
   return (
     <li className="flex items-start gap-2 border-t py-2 text-xs">
       <span className="shrink-0 tabular-nums text-muted-foreground">{clockAt(row.at)}</span>
-      <span className="w-20 shrink-0 truncate font-semibold">{row.tool}</span>
-      <span
-        className={cn(
-          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
-          RISK_STYLES[row.risk] ?? RISK_STYLES.safe,
-        )}
-      >
-        {row.risk}
-      </span>
-      <span
-        className={cn(
-          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
-          DECISION_STYLES[row.decision] ?? DECISION_STYLES.allow,
-        )}
-      >
-        {row.decision}
-        {row.hardBlock ? `: ${row.hardBlock}` : ''}
-      </span>
-      <span className="min-w-0 flex-1 break-words text-muted-foreground">{clip(row.detail, 120)}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-semibold">{row.tool}</span>
+          <span
+            className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+              RISK_STYLES[row.risk] ?? RISK_STYLES.safe,
+            )}
+          >
+            {row.risk}
+          </span>
+          <span
+            className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+              DECISION_STYLES[row.decision] ?? DECISION_STYLES.allow,
+            )}
+          >
+            {row.decision}
+            {row.hardBlock ? `: ${row.hardBlock}` : ''}
+          </span>
+          {site === '' ? null : (
+            <span title={row.url} className="truncate rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+              {site}
+            </span>
+          )}
+          {row.ms === undefined ? null : (
+            <span className="tabular-nums text-[10px] text-muted-foreground">{row.ms} ms</span>
+          )}
+        </div>
+        <p className="mt-0.5 break-words text-muted-foreground">{clip(row.detail, 160)}</p>
+      </div>
+      {row.thumb === undefined ? null : <Thumb src={row.thumb} tool={row.tool} />}
     </li>
   )
 }
 
 function SessionCard({ session }: { session: AuditSession }) {
   const [open, setOpen] = useState(false)
+  const site = hostOf(session.rows.find((row) => row.url !== undefined)?.url ?? '')
 
   return (
-    <article className="rounded-xl border bg-card">
+    <article className="rounded-xl border bg-card" data-run={session.runId ?? undefined}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -84,8 +122,9 @@ function SessionCard({ session }: { session: AuditSession }) {
           <p className="truncate text-sm font-semibold">{clip(session.goal, 80)}</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {session.actions} action{session.actions === 1 ? '' : 's'}
-            {session.blocked > 0 ? ` · ${session.blocked} blocked` : ''} ·{' '}
-            {clockAt(session.startedAt)} · {formatWhen(session.startedAt)}
+            {session.blocked > 0 ? ` · ${session.blocked} blocked` : ''}
+            {site === '' ? '' : ` · ${site}`} · {clockAt(session.startedAt)} ·{' '}
+            {formatWhen(session.startedAt)}
           </p>
         </div>
         <span
@@ -116,6 +155,7 @@ function SessionCard({ session }: { session: AuditSession }) {
 export function HistoryPanel() {
   const [sessions, setSessions] = useState<AuditSession[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const reload = useCallback(async () => {
     setError(null)
@@ -131,6 +171,22 @@ export function HistoryPanel() {
     void reload()
   }, [reload])
 
+  const exportJson = useCallback(async () => {
+    setExporting(true)
+    setError(null)
+    try {
+      await saveTextFile(
+        stampedFilename('navigator-audit', 'json'),
+        'application/json',
+        await buildAuditExport(),
+      )
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setExporting(false)
+    }
+  }, [])
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <section className="flex items-center gap-2.5">
@@ -139,6 +195,15 @@ export function HistoryPanel() {
           <h2 className="text-[17px] font-bold tracking-tight">Task history</h2>
           <p className="text-xs text-muted-foreground">Every action the agent took, and who allowed it.</p>
         </div>
+        <button
+          type="button"
+          onClick={() => void exportJson()}
+          disabled={exporting || sessions === null || sessions.length === 0}
+          aria-label="Export the audit log as JSON"
+          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+        >
+          <Download className="size-4" strokeWidth={1.8} />
+        </button>
         <button
           type="button"
           onClick={() => void reload()}

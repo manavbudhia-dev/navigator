@@ -33,7 +33,7 @@ node scripts/screenshot.mjs    # headless-Chrome screenshot of the side panel (n
 node scripts/perception-check.mjs  # runs the perception layer on a fixture page in headless Chrome (needs `pnpm dev`)
 node scripts/actions-check.mjs     # runs the action executor (click/type/select/scroll) on the fixture (needs `pnpm dev`)
 node scripts/overlay-check.mjs     # renders the on-page element map + action highlight in headless Chrome (needs `pnpm dev`)
-node scripts/history-shot.mjs      # seeds the audit log and screenshots the History + Agent tabs (needs `pnpm dev`)
+node scripts/history-shot.mjs      # audit check + screenshot: seeds the log with urls, durations, screenshots and run ids, exports it as JSON, walks the History + Agent tabs (needs `pnpm dev`)
 node scripts/form-check.mjs        # classifies + fills the fixture form end to end in headless Chrome, then asserts the blocked fields stayed empty (needs `pnpm dev`)
 node scripts/profiles-shot.mjs     # walks the Profiles tab: create vault, edit profile, lock, unlock, and screenshots each state (needs `pnpm dev`)
 node scripts/research-check.mjs    # runs the whole research pipeline over fixture pages in headless Chrome: plan, gather, score, synthesise, export, store (needs `pnpm dev`)

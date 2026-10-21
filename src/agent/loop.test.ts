@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { coreTools } from '@/tools/definitions'
+import { ToolRegistry } from '@/tools/registry'
+import type { AuditInput } from '@/safety/audit'
 import type { ModelConfig } from '@/llm/config'
 import type { CompletionRequest, CompletionResult } from '@/llm/types'
 import type { PageState } from '@/types/pageState'
@@ -7,12 +10,11 @@ import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
 import type { ToolHost } from '@/tools/types'
 
-import { runAgentTask, type AgentHooks, type ApprovalRequest, type CompleteFn } from './loop'
-import { coreTools } from '@/tools/definitions'
-import { ToolRegistry } from '@/tools/registry'
+import { recordAudit } from '@/safety/audit'
+import { runAgentTask, type AgentHooks, type ApprovalRequest, type AuditProbe, type CompleteFn } from './loop'
 
 vi.mock('@/safety/audit', () => ({
-  recordAudit: vi.fn(async (input: Record<string, unknown>) => ({ at: 0, ...input })),
+  recordAudit: vi.fn(async (input: AuditInput) => ({ at: 0, ...input })),
 }))
 
 const config: ModelConfig = {
@@ -130,7 +132,12 @@ function makeHooks(approve = true, answer = 'the answer') {
   return { hooks, events, approvals, questions }
 }
 
-function run(turns: CompletionResult[], mode: AgentMode, approve = true) {
+function run(
+  turns: CompletionResult[],
+  mode: AgentMode,
+  approve = true,
+  evidence: { runId?: string; probe?: AuditProbe } = {},
+) {
   const { host, acts } = makeHost()
   const { hooks, events, approvals, questions } = makeHooks(approve)
   const fn = scriptedFn(turns)
@@ -144,10 +151,15 @@ function run(turns: CompletionResult[], mode: AgentMode, approve = true) {
     config,
     hooks,
     signal: controller.signal,
+    ...evidence,
     completeFn: fn,
     maxSteps: 12,
   })
   return { promise, fn, events, approvals, questions, acts, controller }
+}
+
+function auditRows(): AuditInput[] {
+  return vi.mocked(recordAudit).mock.calls.map(([input]) => input)
 }
 
 function toolMessages(fn: CompleteFn & { requests: CompletionRequest[] }): string[] {
@@ -286,5 +298,60 @@ describe('runAgentTask', () => {
     const { promise, controller } = run([toolCall('read_page', {})], 'auto')
     controller.abort(new Error('user stop'))
     await expect(promise).rejects.toThrow()
+  })
+
+  it('writes the evidence the audit log exists for: run, page, duration, picture, cost', async () => {
+    vi.mocked(recordAudit).mockClear()
+    const probe: AuditProbe = {
+      url: async () => 'https://shop.test/checkout',
+      thumb: async () => 'data:image/jpeg;base64,AAA',
+    }
+    const { promise } = run(
+      [
+        toolCall('read_page', {}),
+        toolCall('click', { index: 1 }),
+        toolCall('finish', { success: true, summary: 'sent it' }),
+      ],
+      'auto',
+      true,
+      { runId: 'run-7', probe },
+    )
+    const outcome = await promise
+    const rows = auditRows()
+
+    expect(rows).toHaveLength(3)
+    expect(rows.every((row) => row.runId === 'run-7')).toBe(true)
+    expect(rows.every((row) => row.url === 'https://shop.test/checkout')).toBe(true)
+
+    const click = rows.find((row) => row.tool === 'click')!
+    expect(click.thumb).toBe('data:image/jpeg;base64,AAA')
+    expect(typeof click.ms).toBe('number')
+    // A read leaves the page as it was, so a picture of it proves nothing.
+    expect(rows.find((row) => row.tool === 'read_page')!.thumb).toBeUndefined()
+
+    // One charge per LLM turn, so summing the log equals what the run cost.
+    expect(rows.reduce((sum, row) => sum + (row.promptTokens ?? 0), 0)).toBe(outcome.promptTokens)
+    expect(rows.reduce((sum, row) => sum + (row.completionTokens ?? 0), 0)).toBe(outcome.completionTokens)
+  })
+
+  it('finishes the task even when Chrome refuses to answer the probe', async () => {
+    vi.mocked(recordAudit).mockClear()
+    const probe: AuditProbe = {
+      url: async () => {
+        throw new Error('tab is gone')
+      },
+      thumb: async () => {
+        throw new Error('capture refused')
+      },
+    }
+    const { promise } = run(
+      [toolCall('click', { index: 1 }), toolCall('finish', { success: true, summary: 'done' })],
+      'auto',
+      true,
+      { probe },
+    )
+    const outcome = await promise
+    expect(outcome.success).toBe(true)
+    expect(auditRows().every((row) => row.url === undefined && row.thumb === undefined)).toBe(true)
   })
 })

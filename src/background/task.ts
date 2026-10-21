@@ -8,6 +8,7 @@ import type { ContentMessage } from '@/types/messages'
 import type { TaskEvent } from '@/types/task'
 import type { AgentMode } from '@/types/agent'
 
+import { createAuditProbe } from './auditApi'
 import { createTabOps } from './tabApi'
 import { createToolHost } from './host'
 import { vault } from './vaultApi'
@@ -86,6 +87,8 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
         }),
     }
 
+    const runId = crypto.randomUUID()
+
     void runAgentTask({
       goal,
       mode,
@@ -97,10 +100,13 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
       signal: kill.signal,
       vault,
       tabs: await createTabOps(),
+      runId,
+      probe: createAuditProbe(tabId),
     })
       .then((outcome) => {
         broadcast({
           type: 'done',
+          runId,
           success: outcome.success,
           summary: outcome.summary,
           steps: outcome.steps,

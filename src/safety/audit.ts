@@ -16,6 +16,12 @@ export interface AuditInput {
   /** null while the action is still pending approval. */
   ok: boolean | null
   detail: string
+  runId?: string
+  url?: string
+  ms?: number
+  promptTokens?: number
+  completionTokens?: number
+  thumb?: string
 }
 
 export async function recordAudit(input: AuditInput, persist = true): Promise<AuditRow> {

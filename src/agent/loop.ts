@@ -10,7 +10,8 @@ import { compactHistory, estimateMessagesTokens } from './compact'
 import { findElementInfo } from './elementLines'
 
 import type { ModelConfig } from '@/llm/config'
-import type { ChatMessage, CompletionRequest, CompletionResult } from '@/llm/types'
+import type { ChatMessage, CompletionRequest, CompletionResult, TokenUsage } from '@/llm/types'
+import type { AuditInput } from '@/safety/audit'
 import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
 import type { ToolContext, ToolHost, TabOps, VaultAccess } from '@/tools/types'
@@ -57,6 +58,17 @@ export type CompleteFn = (
   options: { kind?: 'big' | 'small'; signal?: AbortSignal },
 ) => Promise<CompletionResult>
 
+/**
+ * What the page looked like around an action, for the audit log (spec §9).
+ * Injected by the service worker — the loop stays Chrome-free and testable.
+ * Implementations must never throw: a missing screenshot is not worth a
+ * failed task.
+ */
+export interface AuditProbe {
+  url(): Promise<string | null>
+  thumb(): Promise<string | null>
+}
+
 export interface AgentRunOptions {
   goal: string
   mode: AgentMode
@@ -70,6 +82,10 @@ export interface AgentRunOptions {
   vault?: VaultAccess
   /** Passed straight to the tab tools (spec §8). */
   tabs?: TabOps
+  /** Shared by every audit row this run writes (spec §9). */
+  runId?: string
+  /** Where the action happened and what it looked like afterwards (spec §9). */
+  probe?: AuditProbe
   maxSteps?: number
   completeFn?: CompleteFn
   newId?: () => string
@@ -102,11 +118,24 @@ function countTrailingStreak(signatures: string[]): number {
   return streak
 }
 
+/** Audit extras come from Chrome and can fail; a page that will not answer is left out of the log rather than allowed to fail the task. */
+async function bestEffort(read: (() => Promise<string | null>) | null): Promise<string | null> {
+  if (read === null) return null
+  try {
+    return await read()
+  } catch {
+    return null
+  }
+}
+
 export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutcome> {
   const { goal, mode, tabId, host, registry, config, hooks, signal } = options
   const completeFn: CompleteFn = options.completeFn ?? complete
   const newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10))
   const maxSteps = options.maxSteps ?? 40
+  const probe = options.probe
+  const readUrl = probe === undefined ? null : (): Promise<string | null> => probe.url()
+  const readThumb = probe === undefined ? null : (): Promise<string | null> => probe.thumb()
   const queue = new ActionQueue()
   const ctx: ToolContext = {
     host,
@@ -114,12 +143,16 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
     signal,
     ...(options.vault ? { vault: options.vault } : {}),
     ...(options.tabs ? { tabs: options.tabs } : {}),
-    complete: async (messages, kind) =>
-      completeFn(
+    complete: async (messages, kind) => {
+      const result = await completeFn(
         { messages, ...(kind === 'small' ? { maxTokens: 512 } : {}) },
         config,
         { kind, signal },
-      ),
+      )
+      // Judgement calls made inside tools are real spend too (spec §12).
+      account(result.usage)
+      return result
+    },
   }
 
   const messages: ChatMessage[] = [
@@ -139,6 +172,34 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
 
   const pushToolResult = (callId: string, name: string, content: string): void => {
     messages.push({ role: 'tool', content, toolCallId: callId, name })
+  }
+
+  /** The parts of an audit row that only Chrome and the provider know (spec §9). */
+  const evidence = async (): Promise<Pick<AuditInput, 'runId' | 'url'>> => {
+    const out: Pick<AuditInput, 'runId' | 'url'> = {}
+    if (options.runId !== undefined) out.runId = options.runId
+    const url = await bestEffort(readUrl)
+    if (url !== null) out.url = url
+    return out
+  }
+
+  let uncharged: TokenUsage = { promptTokens: 0, completionTokens: 0 }
+
+  const account = (usage: TokenUsage): void => {
+    promptTokens += usage.promptTokens
+    completionTokens += usage.completionTokens
+    uncharged = {
+      promptTokens: uncharged.promptTokens + usage.promptTokens,
+      completionTokens: uncharged.completionTokens + usage.completionTokens,
+    }
+  }
+
+  // One LLM turn can ask for several actions; its tokens are charged to the
+  // first row of that turn, so summing the log equals what the run cost.
+  const chargeTokens = (): TokenUsage => {
+    const charge = uncharged
+    uncharged = { promptTokens: 0, completionTokens: 0 }
+    return charge
   }
 
   for (let step = 1; step <= maxSteps; step += 1) {
@@ -164,6 +225,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
           config,
           { kind: 'small', signal },
         )
+        account(result.usage)
         return result.message.content ?? '(empty summary)'
       },
     })
@@ -174,8 +236,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
     }
 
     const result = await completeFn({ messages, tools: registry.toToolDefinitions() }, config, { signal })
-    promptTokens += result.usage.promptTokens
-    completionTokens += result.usage.completionTokens
+    account(result.usage)
 
     const assistant = result.message
     if (assistant.content) hooks.emit({ type: 'thinking', text: assistant.content })
@@ -223,7 +284,18 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       if (call.name === 'finish') {
         const success = args['success'] === true
         const summary = String(args['summary'] ?? '')
-        await recordAudit({ goal, tool: 'finish', args, risk: 'safe', hardBlock: null, decision: 'allow', ok: success, detail: summary })
+        await recordAudit({
+          goal,
+          tool: 'finish',
+          args,
+          risk: 'safe',
+          hardBlock: null,
+          decision: 'allow',
+          ok: success,
+          detail: summary,
+          ...(await evidence()),
+          ...chargeTokens(),
+        })
         return { success, summary, steps, promptTokens, completionTokens }
       }
 
@@ -233,7 +305,18 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         hooks.emit({ type: 'question', id, question })
         const answer = await hooks.askUser(id, question)
         pushToolResult(call.id, call.name, `The user answered: ${answer}`)
-        await recordAudit({ goal, tool: 'ask_user', args, risk: 'safe', hardBlock: null, decision: 'allow', ok: null, detail: answer })
+        await recordAudit({
+          goal,
+          tool: 'ask_user',
+          args,
+          risk: 'safe',
+          hardBlock: null,
+          decision: 'allow',
+          ok: null,
+          detail: answer,
+          ...(await evidence()),
+          ...chargeTokens(),
+        })
         continue
       }
 
@@ -252,7 +335,18 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       if (decision === 'block') {
         const reason = `Blocked by ${mode} mode (${assessment.level} risk).`
         hooks.emit({ type: 'blocked', tool: call.name, reason })
-        await recordAudit({ goal, tool: call.name, args, risk: assessment.level, hardBlock: assessment.hardBlock, decision: 'block', ok: false, detail: reason })
+        await recordAudit({
+          goal,
+          tool: call.name,
+          args,
+          risk: assessment.level,
+          hardBlock: assessment.hardBlock,
+          decision: 'block',
+          ok: false,
+          detail: reason,
+          ...(await evidence()),
+          ...chargeTokens(),
+        })
         pushToolResult(call.id, call.name, reason + ' Do not retry write actions in this mode.')
         continue
       }
@@ -271,14 +365,30 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         })
         hooks.emit({ type: 'approval-resolved', id, approved })
         if (!approved) {
-          await recordAudit({ goal, tool: call.name, args, risk: assessment.level, hardBlock: assessment.hardBlock, decision: 'denied', ok: false, detail: 'User denied.' })
+          await recordAudit({
+            goal,
+            tool: call.name,
+            args,
+            risk: assessment.level,
+            hardBlock: assessment.hardBlock,
+            decision: 'denied',
+            ok: false,
+            detail: 'User denied.',
+            ...(await evidence()),
+            ...chargeTokens(),
+          })
           pushToolResult(call.id, call.name, 'The user denied this action. Choose a different approach or ask_user.')
           continue
         }
       }
 
       // --- execute ---------------------------------------------------------
+      // The url is read before the action because a click or navigate is about
+      // to change it; the picture is taken after, because it shows the result.
+      const where = await evidence()
+      const startedAt = Date.now()
       const toolResult = await queue.enqueue(() => registry.execute(call.name, args, ctx))
+      const ms = Date.now() - startedAt
       let content = toolResult.content
       if (call.name === 'read_page' && toolResult.ok) {
         pageLines = content.split('\n').filter((line) => ELEMENT_LINE.test(line))
@@ -290,6 +400,8 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       }
 
       hooks.emit({ type: 'result', tool: call.name, ok: toolResult.ok, content })
+      // Only an action that could change the page is worth a picture of it (spec §12).
+      const thumb = spec.kind === 'read' ? null : await bestEffort(readThumb)
       await recordAudit({
         goal,
         tool: call.name,
@@ -299,6 +411,10 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         decision: decision === 'allow' ? 'allow' : 'approved',
         ok: toolResult.ok,
         detail: content.slice(0, 500),
+        ...where,
+        ...(thumb === null ? {} : { thumb }),
+        ms,
+        ...chargeTokens(),
       })
       pushToolResult(call.id, call.name, content)
 

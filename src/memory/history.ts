@@ -1,9 +1,9 @@
 import { db, type AuditRow } from './db'
 
 /**
- * Sessions are reconstructed from the audit log (spec §9d) rather than stored
- * separately: two rows written minutes apart under the same goal belong to one
- * task, which is enough to rebuild "what did the agent do yesterday".
+ * Sessions are reconstructed from the audit log (spec §9d). A run stamps every
+ * row with its `runId`, so modern rows group exactly; rows written before that
+ * (or by hand) fall back to "same goal, written within a few minutes".
  */
 
 export type SessionOutcome = 'success' | 'failed' | 'stopped' | 'unknown'
@@ -11,6 +11,8 @@ export type SessionOutcome = 'success' | 'failed' | 'stopped' | 'unknown'
 export interface AuditSession {
   id: string
   goal: string
+  /** null for rows logged before runs were stamped. */
+  runId: string | null
   startedAt: number
   endedAt: number
   rows: AuditRow[]
@@ -36,27 +38,41 @@ function outcomeOf(rows: AuditRow[]): SessionOutcome {
 export function groupSessions(input: AuditRow[], gapMs = SESSION_GAP_MS): AuditSession[] {
   interface Draft {
     goal: string
+    runId: string | null
     startedAt: number
     endedAt: number
     rows: AuditRow[]
   }
 
+  const belongsTogether = (draft: Draft, row: AuditRow): boolean => {
+    if (draft.runId !== null && row.runId !== undefined) return draft.runId === row.runId
+    if (row.runId !== undefined) return false
+    return draft.goal === row.goal && row.at - draft.endedAt <= gapMs
+  }
+
   const drafts: Draft[] = []
   for (const row of [...input].sort((a, b) => a.at - b.at)) {
     const last = drafts.at(-1)
-    if (last && last.goal === row.goal && row.at - last.endedAt <= gapMs) {
+    if (last && belongsTogether(last, row)) {
       last.rows.push(row)
       last.endedAt = row.at
     } else {
-      drafts.push({ goal: row.goal, startedAt: row.at, endedAt: row.at, rows: [row] })
+      drafts.push({
+        goal: row.goal,
+        runId: row.runId ?? null,
+        startedAt: row.at,
+        endedAt: row.at,
+        rows: [row],
+      })
     }
   }
 
   return drafts
     .reverse()
     .map((draft) => ({
-      id: `session-${draft.startedAt}`,
+      id: draft.runId !== null ? `run-${draft.runId}` : `session-${draft.startedAt}`,
       goal: draft.goal,
+      runId: draft.runId,
       startedAt: draft.startedAt,
       endedAt: draft.endedAt,
       rows: draft.rows,

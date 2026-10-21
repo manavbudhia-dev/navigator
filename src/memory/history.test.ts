@@ -60,6 +60,35 @@ describe('groupSessions', () => {
     expect(sessions).toHaveLength(2)
   })
 
+  it('keeps two runs of the same goal in separate sessions', () => {
+    const sessions = groupSessions([
+      row({ at: 0, goal: 'renew passport', tool: 'click', runId: 'a' }),
+      row({ at: MINUTE, goal: 'renew passport', tool: 'finish', runId: 'a' }),
+      row({ at: 2 * MINUTE, goal: 'renew passport', tool: 'click', runId: 'b' }),
+    ])
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((session) => session.runId)).toEqual(['b', 'a'])
+    expect(sessions[1]!.id).toBe('run-a')
+  })
+
+  it('trusts the run id over the time gap, because a slow run is still one run', () => {
+    const sessions = groupSessions([
+      row({ at: 0, goal: 'slow site', tool: 'click', runId: 'a' }),
+      row({ at: 90 * MINUTE, goal: 'slow site', tool: 'finish', runId: 'a' }),
+    ])
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.actions).toBe(2)
+  })
+
+  it('falls back to goal plus time gap for rows with no run id', () => {
+    const sessions = groupSessions([
+      row({ at: 0, goal: 'legacy', tool: 'click' }),
+      row({ at: MINUTE, goal: 'legacy', tool: 'finish' }),
+    ])
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.runId).toBeNull()
+  })
+
   it('orders sessions newest first even when rows arrive shuffled', () => {
     const sessions = groupSessions([
       row({ at: 3 * MINUTE, goal: 'later', tool: 'finish' }),
