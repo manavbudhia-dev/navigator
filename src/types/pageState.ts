@@ -1,15 +1,18 @@
 /** Semantic role of an interactive element, mirroring ARIA where possible. */
-export type ElementRole =
-  | 'button'
-  | 'link'
-  | 'textbox'
-  | 'checkbox'
-  | 'radio'
-  | 'combobox'
-  | 'slider'
-  | 'switch'
-  | 'file'
-  | 'clickable'
+export const ELEMENT_ROLES = [
+  'button',
+  'link',
+  'textbox',
+  'checkbox',
+  'radio',
+  'combobox',
+  'slider',
+  'switch',
+  'file',
+  'clickable',
+] as const
+
+export type ElementRole = (typeof ELEMENT_ROLES)[number]
 
 export interface BoundingBox {
   x: number

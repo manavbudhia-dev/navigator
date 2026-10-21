@@ -20,7 +20,7 @@ async function sendToTab(tabId: number, message: ContentMessage): Promise<Conten
   }
 }
 
-async function waitForComplete(tabId: number, timeoutMs = 15_000): Promise<void> {
+export async function waitForTabComplete(tabId: number, timeoutMs = 15_000): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < timeoutMs) {
     const tab = await chrome.tabs.get(tabId)
@@ -33,9 +33,10 @@ async function runAct(tabId: number, action: ActRequest): Promise<ActResult> {
   const result = (await sendToTab(tabId, { kind: 'act', action })) as ActResult
   if (result.ok && result.fellBack && action.type === 'type') {
     // Contenteditable / rich-text fields: the element is already focused,
-    // so trusted key events land in it directly.
+    // so trusted key events land in it directly. The control behind the action
+    // is still the one the content script reported.
     const detail = await cdpAct(tabId, action, null, action.text, action.submit ?? false)
-    return { ok: true, detail }
+    return { ok: true, detail, ...(result.target !== undefined ? { target: result.target } : {}) }
   }
   return result
 }
@@ -60,9 +61,15 @@ export function createToolHost(): ToolHost {
 
     act: runAct,
 
+    async locate(tabId, target) {
+      const response = await sendToTab(tabId, { kind: 'locate', target })
+      if (!('index' in response)) throw new Error('Locate request failed.')
+      return response.index
+    },
+
     async navigate(tabId, url) {
       await chrome.tabs.update(tabId, { url })
-      await waitForComplete(tabId)
+      await waitForTabComplete(tabId)
     },
 
     async openTab(url) {

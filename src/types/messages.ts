@@ -4,7 +4,7 @@
  * through the tool registry instead, not through ad-hoc messages.
  */
 
-import type { ActRequest, ActResult } from './actions'
+import type { ActRequest, ActResult, ActTarget } from './actions'
 import type { AgentMode } from './agent'
 import type { FormFieldView } from '@/content/formFields'
 import type { ArticlePayload, ResearchDepth } from '@/research/types'
@@ -38,6 +38,9 @@ export type BackgroundMessage =
   | { kind: 'research-followup'; runId: string; question: string }
   | { kind: 'tab-command'; text: string }
   | { kind: 'tab-intent'; intent: TabIntent }
+  | { kind: 'run-recipe'; id: string; values: Record<string, string>; mode: AgentMode }
+  | { kind: 'schedule-recipe'; id: string }
+  | { kind: 'unschedule-recipe'; id: string }
 
 export type BackgroundResponse =
   | { ok: true; meta: PageMeta }
@@ -58,12 +61,14 @@ export type ContentMessage =
   | { kind: 'overlay'; visible?: boolean; highlightIndex?: number; review?: number[] }
   | { kind: 'get-form-fields' }
   | { kind: 'get-article' }
+  | { kind: 'locate'; target: ActTarget }
 
 export type ContentResponse =
   | { ok: true; meta: PageMeta }
   | { ok: true; pageState: PageState }
   | { ok: true; fields: FormFieldView[] }
   | { ok: true; article: ArticlePayload }
+  | { ok: true; index: number | null }
   | ActResult
 
 export function isBackgroundMessage(value: unknown): value is BackgroundMessage {
@@ -85,7 +90,10 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
       value.kind === 'stop-research' ||
       value.kind === 'research-followup' ||
       value.kind === 'tab-command' ||
-      value.kind === 'tab-intent')
+      value.kind === 'tab-intent' ||
+      value.kind === 'run-recipe' ||
+      value.kind === 'schedule-recipe' ||
+      value.kind === 'unschedule-recipe')
   )
 }
 
@@ -99,6 +107,7 @@ export function isContentMessage(value: unknown): value is ContentMessage {
       value.kind === 'act' ||
       value.kind === 'overlay' ||
       value.kind === 'get-form-fields' ||
-      value.kind === 'get-article')
+      value.kind === 'get-article' ||
+      value.kind === 'locate')
   )
 }

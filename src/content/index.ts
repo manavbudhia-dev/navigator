@@ -2,6 +2,7 @@ import { performAct } from './actions'
 import { readArticleWithLinks } from './article'
 import { readFormFields } from './formFields'
 import { highlightElement, markForReview, setOverlay } from './overlay'
+import { locateRecorded } from './perception/locate'
 import { buildPageState, getSnapshot } from './perception/pageState'
 import {
   isContentMessage,
@@ -73,6 +74,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     response = { ok: true, fields: readFormFields(document, getSnapshot()) }
   } else if (message.kind === 'get-article') {
     response = { ok: true, article: readArticleWithLinks(document) }
+  } else if (message.kind === 'locate') {
+    response = { ok: true, index: locateRecorded(document, getSnapshot(), message.target.selector) }
   } else {
     const pageState = buildPageState(document, {
       ...DEFAULT_PAGE_STATE_OPTIONS,

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import type { JsonSchema, ToolDefinition } from '@/llm/types'
 
-import type { ToolContext, ToolSpec } from './types'
+import type { ToolContext, ToolResult, ToolSpec } from './types'
 
 /**
  * The single place that knows every tool. The agent loop asks it for the
@@ -45,7 +45,7 @@ export class ToolRegistry {
     return { ok: true, args: parsed.data }
   }
 
-  async execute(name: string, rawArgs: unknown, ctx: ToolContext): Promise<{ ok: boolean; content: string }> {
+  async execute(name: string, rawArgs: unknown, ctx: ToolContext): Promise<ToolResult> {
     const spec = this.tools.get(name)
     if (!spec) return { ok: false, content: `Unknown tool: ${name}` }
 

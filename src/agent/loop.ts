@@ -413,6 +413,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         detail: content.slice(0, 500),
         ...where,
         ...(thumb === null ? {} : { thumb }),
+        ...(toolResult.target === undefined ? {} : { target: toolResult.target }),
         ms,
         ...chargeTokens(),
       })

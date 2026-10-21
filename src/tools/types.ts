@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 
-import type { ActRequest, ActResult } from '@/types/actions'
+import type { ActRequest, ActResult, ActTarget } from '@/types/actions'
 import type { PageState } from '@/types/pageState'
 import type { Profile, ProfileMeta } from '@/types/vault'
 import type { FormFieldView } from '@/content/formFields'
@@ -19,12 +19,22 @@ export interface ToolResult {
   ok: boolean
   /** Text returned to the model as the tool message. */
   content: string
+  /**
+   * The control this call touched, when it touched one. Only the audit log
+   * and recipes see it — never the transcript (spec §11).
+   */
+  target?: ActTarget
 }
 
 export interface ToolHost {
   pageState(tabId: number, includeOffViewport?: boolean): Promise<PageState>
   formFields(tabId: number): Promise<FormFieldView[]>
   act(tabId: number, action: ActRequest): Promise<ActResult>
+  /**
+   * Where a remembered control lives in the *current* snapshot, or null when
+   * the page moved on. Only recipe replay needs it (spec §11).
+   */
+  locate(tabId: number, target: ActTarget): Promise<number | null>
   navigate(tabId: number, url: string): Promise<void>
   openTab(url: string): Promise<number>
   sleep(ms: number, signal: AbortSignal): Promise<void>

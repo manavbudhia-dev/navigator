@@ -60,6 +60,9 @@ function fakeContext(calls: Calls, actResult: ActResult = { ok: true, detail: 'C
     review(_tabId, indices) {
       calls.reviews.push(indices)
     },
+    async locate() {
+      return null
+    },
   }
   const controller = new AbortController()
   return { host, tabId: 1, signal: controller.signal }

@@ -2,9 +2,10 @@ import { z } from 'zod'
 
 import { applyMapping, planFill, type FillPlan } from '@/forms/mapper'
 import { allowedValuesFor, buildFormMappingMessages, parseFormMapping } from '@/prompts/formMapper'
+import type { ActResult } from '@/types/actions'
 import type { Profile } from '@/types/vault'
 import type { PageState } from '@/types/pageState'
-import type { ToolContext, ToolSpec } from './types'
+import type { ToolContext, ToolResult, ToolSpec } from './types'
 
 /**
  * Core tool set (spec §4). Tab management and research tools land in
@@ -63,6 +64,19 @@ export function normalizeUrl(url: string): string {
 export function pageStateToText(state: PageState): string {
   const meta = `URL: ${state.url}\nTitle: ${state.title}\nScroll: ${state.scrollPercent}% | login: ${state.loginState}`
   return [meta, ...state.elementLines, '', state.markdown].join('\n')
+}
+
+/**
+ * What an action did, for the transcript — plus the control it touched, which
+ * only the audit log and recipes ever see (spec §11).
+ */
+function actResult(result: ActResult): ToolResult {
+  if (!result.ok) return { ok: false, content: result.error }
+  return {
+    ok: true,
+    content: result.detail,
+    ...(result.target !== undefined ? { target: result.target } : {}),
+  }
 }
 
 /** What the model gets back: which fields, from which vault path — never the values. */
@@ -147,8 +161,7 @@ export function coreTools(): ToolSpec[] {
     kind: 'write',
     schema: ClickArgs,
     async run(args, ctx) {
-      const result = await ctx.host.act(ctx.tabId, { type: 'click', index: args.index })
-      return { ok: result.ok, content: result.ok ? result.detail : result.error }
+      return actResult(await ctx.host.act(ctx.tabId, { type: 'click', index: args.index }))
     },
   }
 
@@ -159,13 +172,14 @@ export function coreTools(): ToolSpec[] {
     kind: 'write',
     schema: TypeArgs,
     async run(args, ctx) {
-      const result = await ctx.host.act(ctx.tabId, {
-        type: 'type',
-        index: args.index,
-        text: args.text,
-        ...(args.submit !== undefined ? { submit: args.submit } : {}),
-      })
-      return { ok: result.ok, content: result.ok ? result.detail : result.error }
+      return actResult(
+        await ctx.host.act(ctx.tabId, {
+          type: 'type',
+          index: args.index,
+          text: args.text,
+          ...(args.submit !== undefined ? { submit: args.submit } : {}),
+        }),
+      )
     },
   }
 

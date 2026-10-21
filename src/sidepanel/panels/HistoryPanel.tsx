@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Download, History, RefreshCw } from 'lucide-react'
 
 import { usePricing } from '../usePricing'
+import { RecipeLibrary } from '../components/RecipeLibrary'
+import { SaveRecipeButton } from '../components/SaveRecipe'
 import { saveTextFile, stampedFilename } from '@/lib/download'
 import { formatCost, summarizeRun } from '@/memory/cost'
 import { buildAuditExport } from '@/memory/export'
@@ -108,7 +110,7 @@ function StepRow({ row }: { row: AuditRow }) {
   )
 }
 
-function SessionCard({ session }: { session: AuditSession }) {
+function SessionCard({ session, onSaved }: { session: AuditSession; onSaved: () => void }) {
   const [open, setOpen] = useState(false)
   const pricing = usePricing()
   const run = useMemo(() => summarizeRun(session.rows, pricing), [session.rows, pricing])
@@ -156,6 +158,16 @@ function SessionCard({ session }: { session: AuditSession }) {
           Over the per-step target: {run.over.join(' · ')}
         </p>
       ) : null}
+      {session.outcome === 'success' ? (
+        <div className="border-t px-3 py-2">
+          <SaveRecipeButton
+            rows={session.rows}
+            goal={session.goal}
+            runId={session.runId}
+            onSaved={onSaved}
+          />
+        </div>
+      ) : null}
       {open ? (
         <ul className="px-3 pb-3">
           {session.rows.map((row, index) => (
@@ -171,6 +183,7 @@ export function HistoryPanel() {
   const [sessions, setSessions] = useState<AuditSession[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [libraryRefresh, setLibraryRefresh] = useState(0)
 
   const reload = useCallback(async () => {
     setError(null)
@@ -229,6 +242,15 @@ export function HistoryPanel() {
         </button>
       </section>
 
+      <RecipeLibrary refreshKey={libraryRefresh} />
+
+      <section className="flex items-center gap-2 border-t pt-3">
+        <h2 className="text-[17px] font-bold tracking-tight">Runs</h2>
+        <p className="flex-1 text-xs text-muted-foreground">
+          One card per task, newest first.
+        </p>
+      </section>
+
       {error ? (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600" role="alert">
           {error}
@@ -247,7 +269,11 @@ export function HistoryPanel() {
       ) : (
         <div className="flex flex-col gap-2">
           {sessions.map((session) => (
-            <SessionCard key={session.id} session={session} />
+            <SessionCard
+              key={session.id}
+              session={session}
+              onSaved={() => setLibraryRefresh((value) => value + 1)}
+            />
           ))}
         </div>
       )}

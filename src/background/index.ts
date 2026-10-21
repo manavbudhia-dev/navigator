@@ -9,8 +9,10 @@ import {
 
 import { handleVaultRequest } from './vaultApi'
 import { researchFollowup, startResearch, stopResearch } from './research'
+import { restoreSchedules, scheduleRecipe, startRecipeRun, unscheduleRecipe } from './recipeRun'
 import { runTabCommand, runTabIntent, startTabWatchers } from './tabApi'
-import { resolveApproval, resolveQuestion, startTask, stopTask } from './task'
+import { resolveApproval, resolveQuestion, stopRun } from './runControl'
+import { startTask } from './task'
 
 /**
  * Background service worker = agent orchestrator.
@@ -25,6 +27,9 @@ chrome.runtime.onInstalled.addListener((details) => {
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => console.error('[navigator] sidePanel setup failed', error))
 
+  // An update wipes every alarm, so the recipe library re-arms its own clock.
+  void restoreSchedules().catch((error: unknown) => console.warn('[navigator] schedule restore failed', error))
+
   console.info(`[navigator] ${details.reason} — service worker ready`)
 })
 
@@ -33,6 +38,8 @@ chrome.runtime.onStartup.addListener(() => {
   void chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => console.error('[navigator] sidePanel setup failed', error))
+
+  void restoreSchedules().catch((error: unknown) => console.warn('[navigator] schedule restore failed', error))
 })
 
 // The tab manager's last-seen clock: registrations happen once per worker boot.
@@ -75,10 +82,23 @@ function control(apply: () => TaskControl): BackgroundResponse {
   }
 }
 
+/** Recipe answers: accepted true/false, and never a rejected message channel. */
+async function attempt(run: Promise<unknown>): Promise<BackgroundResponse> {
+  try {
+    const result = await run
+    if (typeof result === 'object' && result !== null && 'ok' in result) {
+      return control(() => result as TaskControl)
+    }
+    return { ok: true, accepted: true }
+  } catch (error) {
+    return control(() => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+  }
+}
+
 function handleControlMessage(message: BackgroundMessage): BackgroundResponse | null {
   switch (message.kind) {
     case 'stop-task':
-      return control(stopTask)
+      return control(stopRun)
     case 'approve-action':
       return control(() => resolveApproval(message.id, message.approved))
     case 'answer-question':
@@ -90,8 +110,14 @@ function handleControlMessage(message: BackgroundMessage): BackgroundResponse | 
   }
 }
 
-/** `get-article` is answered by `researchHost` directly, never forwarded here. */
-type ForwardedResponse = Exclude<ContentResponse, { ok: true; article: ArticlePayload }>
+/**
+ * `get-article` is answered by `researchHost` directly and `locate` only by the
+ * recipe replay host, so neither is ever forwarded from a side-panel message.
+ */
+type ForwardedResponse = Exclude<
+  ContentResponse,
+  { ok: true; article: ArticlePayload } | { ok: true; index: number | null }
+>
 
 async function forwardToActiveTab(message: BackgroundMessage): Promise<BackgroundResponse> {
   const tabId = await getActiveTabId()
@@ -194,6 +220,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const text = error instanceof Error ? error.message : String(error)
         sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
       })
+    return true
+  }
+
+  if (message.kind === 'run-recipe') {
+    attempt(startRecipeRun({ id: message.id, values: message.values, mode: message.mode, interactive: true, detached: false })).then(sendResponse)
+    return true
+  }
+
+  if (message.kind === 'schedule-recipe') {
+    attempt(scheduleRecipe(message.id)).then(sendResponse)
+    return true
+  }
+
+  if (message.kind === 'unschedule-recipe') {
+    attempt(unscheduleRecipe(message.id)).then(sendResponse)
     return true
   }
 

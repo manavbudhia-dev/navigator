@@ -74,6 +74,9 @@ function makeHost() {
       return []
     },
     review() {},
+    async locate() {
+      return null
+    },
   }
   return { host, acts }
 }

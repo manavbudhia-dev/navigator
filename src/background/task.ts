@@ -1,6 +1,5 @@
-import { runAgentTask, type AgentHooks, type ApprovalRequest } from '@/agent/loop'
+import { runAgentTask } from '@/agent/loop'
 import { loadModelConfig } from '@/llm/config'
-import { KillSwitch } from '@/safety/killSwitch'
 import { coreTools } from '@/tools/definitions'
 import { tabTools } from '@/tools/tabTools'
 import { ToolRegistry } from '@/tools/registry'
@@ -11,6 +10,7 @@ import type { AgentMode } from '@/types/agent'
 import { createAuditProbe } from './auditApi'
 import { createTabOps } from './tabApi'
 import { createToolHost } from './host'
+import { beginRun, endRun, hooksFor, isRunActive, resolveApproval, resolveQuestion, stopRun } from './runControl'
 import { vault } from './vaultApi'
 
 /**
@@ -19,17 +19,9 @@ import { vault } from './vaultApi'
  * periodic alarm keeps the MV3 worker alive while a task runs.
  */
 
-interface ActiveRun {
-  kill: KillSwitch
-  approvals: Map<string, (approved: boolean) => void>
-  questions: Map<string, (answer: string) => void>
-}
-
-let active: ActiveRun | null = null
-
 const KEEPALIVE_ALARM = 'navigator-keepalive'
 
-function broadcast(event: TaskEvent): void {
+export function broadcast(event: TaskEvent): void {
   void chrome.runtime.sendMessage({ source: 'navigator-task', event }).catch(() => {
     // Side panel closed — the loop keeps running; events are lost by design.
   })
@@ -57,36 +49,18 @@ function emitAndHighlight(tabId: number, event: TaskEvent): void {
 }
 
 export function isTaskRunning(): boolean {
-  return active !== null
+  return isRunActive()
 }
 
 export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: boolean; error?: string }> {
-  if (active) return { ok: false, error: 'A task is already running. Stop it first.' }
-
   let config: Awaited<ReturnType<typeof loadModelConfig>>
+  let tabId: number
   try {
     config = await loadModelConfig()
-    const tabId = await getActiveTabId()
-
-    const kill = new KillSwitch()
-    const approvals = new Map<string, (approved: boolean) => void>()
-    const questions = new Map<string, (answer: string) => void>()
-    active = { kill, approvals, questions }
+    tabId = await getActiveTabId()
+    const run = beginRun('task')
     chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 })
-
-    const hooks: AgentHooks = {
-      emit: (event) => emitAndHighlight(tabId, event),
-      requestApproval: (request: ApprovalRequest) =>
-        new Promise<boolean>((resolve) => {
-          approvals.set(request.id, resolve)
-        }),
-      askUser: (id, question) =>
-        new Promise<string>((resolve) => {
-          questions.set(id, resolve)
-          void question
-        }),
-    }
-
+    const hooks = hooksFor((event) => emitAndHighlight(tabId, event))
     const runId = crypto.randomUUID()
 
     void runAgentTask({
@@ -97,7 +71,7 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
       registry: new ToolRegistry([...coreTools(), ...tabTools()]),
       config,
       hooks,
-      signal: kill.signal,
+      signal: run.kill.signal,
       vault,
       tabs: await createTabOps(),
       runId,
@@ -119,47 +93,21 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
         broadcast({ type: 'failed', error: message })
       })
       .finally(() => {
-        active = null
+        endRun()
         chrome.alarms.clear(KEEPALIVE_ALARM)
       })
 
     return { ok: true }
   } catch (error) {
-    active = null
+    endRun()
     chrome.alarms.clear(KEEPALIVE_ALARM)
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
-export function stopTask(): { ok: boolean; error?: string } {
-  if (!active) return { ok: false, error: 'No task is running.' }
-  active.kill.stop()
-  for (const resolve of active.approvals.values()) resolve(false)
-  for (const resolve of active.questions.values()) resolve('(task stopped)')
-  active.approvals.clear()
-  active.questions.clear()
-  return { ok: true }
-}
-
-export function resolveApproval(id: string, approved: boolean): { ok: boolean; error?: string } {
-  const resolve = active?.approvals.get(id)
-  if (!resolve) return { ok: false, error: 'No pending approval with that id.' }
-  active?.approvals.delete(id)
-  resolve(approved)
-  return { ok: true }
-}
-
-export function resolveQuestion(id: string, answer: string): { ok: boolean; error?: string } {
-  const resolve = active?.questions.get(id)
-  if (!resolve) return { ok: false, error: 'No pending question with that id.' }
-  active?.questions.delete(id)
-  resolve(answer)
-  return { ok: true }
-}
-
 /** The MV3 service worker dies when idle; an active alarm resets the timer. */
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === KEEPALIVE_ALARM && active !== null) {
+  if (alarm.name === KEEPALIVE_ALARM && isRunActive()) {
     // Touching any chrome API extends the lifetime by another minute.
     void chrome.runtime.getPlatformInfo().catch(() => undefined)
   }

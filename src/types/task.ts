@@ -16,6 +16,7 @@ export type TaskEvent =
   | { type: 'result'; tool: string; ok: boolean; content: string }
   | { type: 'blocked'; tool: string; reason: string }
   | { type: 'note'; text: string }
+  | { type: 'recipe'; id: string; name: string; ok: boolean; detail: string; healed: number }
   | { type: 'done'; runId: string; success: boolean; summary: string; steps: number; promptTokens: number; completionTokens: number }
   | { type: 'failed'; error: string }
 

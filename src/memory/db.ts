@@ -1,5 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
+import type { ActTarget } from '@/types/actions'
+
 export interface SettingRow {
   key: string
   value: unknown
@@ -32,6 +34,11 @@ export interface AuditRow {
   completionTokens?: number
   /** Downscaled JPEG of the page after the action, as a data URL. */
   thumb?: string
+  /**
+   * The control an action touched, so a finished run can be replayed later
+   * without asking the model where the "Submit" button went (spec §11).
+   */
+  target?: ActTarget
 }
 
 /** An encrypted profile: nothing about its contents is readable while locked. */
@@ -97,6 +104,21 @@ export interface SessionRow {
 }
 
 /**
+ * A saved workflow (spec §11). Stored as one document per row: the step list
+ * is always read and written whole, so indexing inside it would buy nothing.
+ */
+export interface RecipeRow {
+  id: string
+  name: string
+  goal: string
+  updatedAt: number
+  /** True while a `chrome.alarms` entry exists for it (spec §11 scheduling). */
+  scheduled: boolean
+  /** The `Recipe` document itself, kept in one column so later fields need no migration. */
+  document: unknown
+}
+
+/**
  * Local persistence. IndexedDB is available in both the service worker and
  * the side panel, so every context reads the same settings. Later batches
  * add tables for memory entries and recipes here.
@@ -110,6 +132,7 @@ export class NavigatorDB extends Dexie {
   tabStats!: Table<TabStatRow, string>
   tabIndex!: Table<TabIndexRow, string>
   sessions!: Table<SessionRow, string>
+  recipes!: Table<RecipeRow, string>
 
   constructor() {
     super('navigator')
@@ -153,6 +176,19 @@ export class NavigatorDB extends Dexie {
       tabStats: 'urlKey, lastSeenAt',
       tabIndex: 'urlKey, indexedAt',
       sessions: 'id, createdAt',
+    })
+    // Recipes (spec §11): saved workflows, plus the audit rows that carry the
+    // element each action touched.
+    this.version(7).stores({
+      settings: 'key',
+      audit: '++id, at, tool, runId',
+      vault: 'id, updatedAt',
+      researchRuns: 'id, createdAt',
+      researchNotes: 'id, runId, url',
+      tabStats: 'urlKey, lastSeenAt',
+      tabIndex: 'urlKey, indexedAt',
+      sessions: 'id, createdAt',
+      recipes: 'id, updatedAt, scheduled',
     })
   }
 }

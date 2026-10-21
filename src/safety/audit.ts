@@ -1,4 +1,5 @@
 import { db, type AuditRow } from '@/memory/db'
+import type { ActTarget } from '@/types/actions'
 
 /**
  * Audit log (spec §9d): every attempted action is recorded — including ones
@@ -22,6 +23,7 @@ export interface AuditInput {
   promptTokens?: number
   completionTokens?: number
   thumb?: string
+  target?: ActTarget
 }
 
 export async function recordAudit(input: AuditInput, persist = true): Promise<AuditRow> {

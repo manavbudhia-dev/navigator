@@ -98,6 +98,9 @@ function harness(
     review(_tabId: number, indices: number[]) {
       reviewCalls.push(indices)
     },
+    async locate() {
+      return null
+    },
   } satisfies ToolHost
 
   const complete = async (messages: ChatMessage[]): Promise<CompletionResult> => {

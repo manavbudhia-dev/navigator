@@ -2,7 +2,7 @@ import { getSnapshot } from './perception/pageState'
 import { resolveSelector } from './perception/resolve'
 import { rectOf } from './perception/visibility'
 
-import type { ActRequest, ActResult } from '@/types/actions'
+import type { ActRequest, ActResult, ActTarget } from '@/types/actions'
 import type { IndexedElement } from '@/types/pageState'
 
 /**
@@ -18,6 +18,11 @@ function findElement(index: number): IndexedElement | null {
 
 function labelOf(el: IndexedElement): string {
   return el.text || el.attributes['aria-label'] || el.attributes['placeholder'] || `<${el.tag}>`
+}
+
+/** Remembered for recipes (spec §11): the control behind this action. */
+function targetOf(el: IndexedElement): ActTarget {
+  return { selector: el.selector, label: labelOf(el), role: el.role, inputType: el.attributes['type'] ?? null }
 }
 
 function dispatchPointerSequence(target: Element, x: number, y: number): void {
@@ -54,6 +59,7 @@ function doClick(index: number): ActResult {
   return {
     ok: true,
     detail: `Clicked ${labelOf(el)} (resolved via ${resolved.strategy}).`,
+    target: targetOf(el),
   }
 }
 
@@ -85,7 +91,7 @@ function doType(index: number, text: string, submit: boolean): ActResult {
       }
       target.value = option.value
       target.dispatchEvent(new Event('change', { bubbles: true }))
-      return { ok: true, detail: `Selected "${text}" in ${labelOf(el)}.` }
+      return { ok: true, detail: `Selected "${text}" in ${labelOf(el)}.`, target: targetOf(el) }
     }
     target.scrollIntoView({ block: 'center', behavior: 'instant' })
     const rect = rectOf(target)
@@ -94,6 +100,7 @@ function doType(index: number, text: string, submit: boolean): ActResult {
       ok: true,
       detail: `Focused ${labelOf(el)}; typing needs the keyboard fallback.`,
       fellBack: true,
+      target: targetOf(el),
     }
   }
 
@@ -102,9 +109,13 @@ function doType(index: number, text: string, submit: boolean): ActResult {
 
   if (submit && target.form) {
     target.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    return { ok: true, detail: `Typed "${text}" into ${labelOf(el)} and submitted the form.` }
+    return {
+      ok: true,
+      detail: `Typed "${text}" into ${labelOf(el)} and submitted the form.`,
+      target: targetOf(el),
+    }
   }
-  return { ok: true, detail: `Typed "${text}" into ${labelOf(el)}.` }
+  return { ok: true, detail: `Typed "${text}" into ${labelOf(el)}.`, target: targetOf(el) }
 }
 
 function doScroll(direction: 'down' | 'up', amount: number, index?: number): ActResult {

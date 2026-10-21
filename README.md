@@ -41,6 +41,7 @@ node scripts/research-check.mjs    # runs the whole research pipeline over fixtu
 node scripts/research-shot.mjs     # seeds two finished reports and walks the Research tab: report, hover sources, export, copy, tab budget, past runs (needs `pnpm dev`)
 node scripts/tabs-check.mjs        # runs the tab manager end to end in headless Chrome: commands, grouping, dedupe, staleness, memory, undo, sessions, index (needs `pnpm dev`)
 node scripts/tabs-shot.mjs         # walks the Tabs tab against a fake browser: index, free, merge, search, group, close + undo, stale, selection, sessions (needs `pnpm dev`)
+node scripts/recipes-check.mjs     # recipes check + screenshot: saves a finished run as a recipe from History, replays it with fake tools, self-heals a dead step, schedules it, exports and re-imports the JSON (needs `pnpm dev`)
 ```
 
 ### Load the extension in Chrome
@@ -209,6 +210,35 @@ tabs mid-flight. Closing the only tab in a window is refused: that would close t
 
 ---
 
+## Recipes
+
+A run that went well can be saved and replayed. Every successful run card — on the Agent tab while
+it finishes, and in History afterwards — has **Save as Recipe**. Only steps the audit log recorded
+as actually allowed are carried over, so blocked, denied and failed actions stay out of the recipe.
+
+Each step keeps the element the action really landed on: its CSS selector, XPath, visible text
+anchor, bounding box, tag and role. Tick **turn each typed value into a variable** and the values you
+typed become `{{job_title}}`, `{{city}}`, `{{profile}}`; the recipe card renders a field per variable
+pre-filled with the sample it was recorded with, so a replay starts one edit away.
+
+**Replay is FAST by default**: for each step the recorded selector is resolved against the live page
+(css → xpath → text anchor → bbox, and only if the element it finds still has the recorded tag and
+role). A step that lands goes through the same risk scorer and approval gate as a live run. A step
+that does not land is re-decided by the model — one nested agent task capped at four steps for that
+one step only, never for the rest of the recipe. Scheduled runs cannot approve themselves, so a
+recipe that reaches an approval in the background stops and reports instead of clicking through.
+
+**Schedule** a recipe daily or weekly with a time, and `chrome.alarms` replays it in a background
+window at the next slot. Chrome deletes every alarm when the extension reloads or updates, so the
+library re-arms its own clocks on install and startup. A scheduled recipe has to contain a navigate
+step — with nowhere to start, the run says so instead of replaying against a blank tab.
+
+Recipes export and import as JSON, individually or the whole library at once. An import whose id
+collides with an existing recipe gets a fresh id and floats to the top rather than overwriting
+anything. Recorded selectors go to the audit log, never into the model transcript.
+
+---
+
 ## Roadmap
 
 | Batch | Scope                                                                  | Status |
@@ -222,7 +252,7 @@ tabs mid-flight. Closing the only tab in a window is refused: that would close t
 | 7     | Feature A: smart form filler + encrypted profile vault                  | done |
 | 8     | Feature B: research engine                                              | done |
 | 9     | Feature C: tab manager                                                  | done |
-| 10    | Recipes, audit log, cost meter, Playwright E2E                          | next |
+| 10    | Recipes, audit log, cost meter, Playwright E2E                          | audit log, cost meter, recipes done · Playwright E2E next |
 
 ## Safety model
 

@@ -19,6 +19,7 @@ import {
 
 import { StatusPill, type ConnectionStatus } from '../components/StatusPill'
 import { CostText } from '../components/CostText'
+import { SaveRecipeButton } from '../components/SaveRecipe'
 import { useTaskBridge } from '../useTaskBridge'
 import { formatWhen, loadSessions, type AuditSession } from '@/memory/history'
 import { inExtension } from '@/lib/extension'
@@ -124,6 +125,14 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
       .then(setSessions)
       .catch(() => setSessions([]))
   }, [finished])
+
+  // The run that just ended, once its audit rows have landed in `sessions`.
+  const lastFinish = [...task.events].reverse().find((event) => event.type === 'done' || event.type === 'failed')
+  const successRun = lastFinish?.type === 'done' && lastFinish.success ? lastFinish : null
+  const saveTarget =
+    successRun === null
+      ? null
+      : (sessions.find((session) => session.runId === successRun.runId) ?? null)
 
   useEffect(() => {
     const list = timelineRef.current
@@ -374,6 +383,11 @@ export function AgentPanel({ onOpenHistory }: { onOpenHistory: () => void }) {
                 </li>
               ))}
             </ol>
+            {saveTarget === null ? null : (
+              <div className="mt-2 border-t pt-2">
+                <SaveRecipeButton rows={saveTarget.rows} goal={saveTarget.goal} runId={saveTarget.runId} />
+              </div>
+            )}
           </div>
         </section>
       ) : null}

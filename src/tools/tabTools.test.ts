@@ -57,6 +57,7 @@ function spy(report: TabReport = emptyReport()): { intents: TabIntent[]; guards:
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(ms, 1), signal))
     },
     review() {},
+    locate: async () => null,
   }
   const context: ToolContext = {
     host,
@@ -229,6 +230,7 @@ describe('tab tools: results for the model', () => {
       openTab: async () => 1,
       sleep: async () => {},
       review: () => {},
+      locate: async () => null,
     } satisfies ToolHost
     const context: ToolContext = { host, tabId: 1, signal: new AbortController().signal }
     for (const spec of tabTools()) {
