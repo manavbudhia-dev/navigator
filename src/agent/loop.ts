@@ -13,7 +13,7 @@ import type { ModelConfig } from '@/llm/config'
 import type { ChatMessage, CompletionRequest, CompletionResult } from '@/llm/types'
 import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
-import type { ToolContext, ToolHost, VaultAccess } from '@/tools/types'
+import type { ToolContext, ToolHost, TabOps, VaultAccess } from '@/tools/types'
 import type { ToolRegistry } from '@/tools/registry'
 import type { RiskLevel } from '@/safety/risk'
 
@@ -68,6 +68,8 @@ export interface AgentRunOptions {
   signal: AbortSignal
   /** Passed straight to tools that need it (fill_form). */
   vault?: VaultAccess
+  /** Passed straight to the tab tools (spec §8). */
+  tabs?: TabOps
   maxSteps?: number
   completeFn?: CompleteFn
   newId?: () => string
@@ -111,6 +113,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
     tabId,
     signal,
     ...(options.vault ? { vault: options.vault } : {}),
+    ...(options.tabs ? { tabs: options.tabs } : {}),
     complete: async (messages, kind) =>
       completeFn(
         { messages, ...(kind === 'small' ? { maxTokens: 512 } : {}) },

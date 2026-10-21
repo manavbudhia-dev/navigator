@@ -38,6 +38,8 @@ node scripts/form-check.mjs        # classifies + fills the fixture form end to 
 node scripts/profiles-shot.mjs     # walks the Profiles tab: create vault, edit profile, lock, unlock, and screenshots each state (needs `pnpm dev`)
 node scripts/research-check.mjs    # runs the whole research pipeline over fixture pages in headless Chrome: plan, gather, score, synthesise, export, store (needs `pnpm dev`)
 node scripts/research-shot.mjs     # seeds two finished reports and walks the Research tab: report, hover sources, export, copy, tab budget, past runs (needs `pnpm dev`)
+node scripts/tabs-check.mjs        # runs the tab manager end to end in headless Chrome: commands, grouping, dedupe, staleness, memory, undo, sessions, index (needs `pnpm dev`)
+node scripts/tabs-shot.mjs         # walks the Tabs tab against a fake browser: index, free, merge, search, group, close + undo, stale, selection, sessions (needs `pnpm dev`)
 ```
 
 ### Load the extension in Chrome
@@ -79,8 +81,9 @@ src/
 Also under `src/`: `agent/` (planner + executor loop), `llm/` (provider abstraction),
 `tools/` (registry + executor), `memory/` (Dexie + crypto + profile vault + research store),
 `safety/` (risk scorer, guard), `prompts/` (system prompt templates), `forms/` (field classifier +
-fill planner), and `research/` (plan → gather → synthesise pipeline, exports and follow-up retrieval).
-Batch 9 adds `tabs/` (tab manager).
+fill planner), `research/` (plan → gather → synthesise pipeline, exports and follow-up retrieval),
+and `tabs/` (tab manager: command parsing, clustering, duplicates, staleness, memory saver,
+semantic search, sessions and the undo buffer — none of it imports Chrome).
 
 ## Permissions — why each one
 
@@ -154,6 +157,39 @@ agent loop uses before it reaches a prompt.
 
 ---
 
+## Feature C — tab manager
+
+Type a sentence into the **Tabs** tab — "close all YouTube tabs", "group my work tabs", "find the
+tab with the pricing page", "save this session for tomorrow" — or press a quick action that names
+the same intent. Rules read the sentence first; the small model is only asked when the rules cannot
+tell, and it may choose a scope, never a verb it was not given.
+
+- **Auto-grouping** clusters tabs by a local term-weighted similarity over title, host and path
+  (cosine, greedy agglomerative, window-scoped because Chrome groups cannot span windows). The
+  cheap model names each cluster; a nonsense or missing reply falls back to the site label.
+- **Duplicate merge** compares canonical URLs, so `www.`, a `#fragment` and `?utm_*` collapse to
+  one page. The live copy stays and a pinned tab is never closed as a duplicate.
+- **Stale sweeper** reports tabs whose last activation or completed load we recorded more than X
+  days ago. It proposes only — closing is a click, and the suggestion never includes the active,
+  pinned or `chrome://` tabs. Chrome gives no per-tab usage clock, so the extension records one
+  itself in `tabStats`.
+- **Memory saver** calls `discard()` on the heaviest inactive tabs and reports the bytes released as
+  an estimate derived from the indexed page weight, labelled as an estimate.
+- **Semantic tab search** ranks open tabs by title and URL always, and by page text once a tab has
+  been indexed. Each result says which of the two matched, so the UI never implies a page was read
+  when it was not.
+- **Sessions** store every open URL with a name, tags and a note in IndexedDB; restoring reopens only
+  what is missing.
+- **Bulk operations** push a snapshot into one 60-second undo buffer owned by the service worker, so
+  the panel and the agent's tab tools share a single UNDO. The banner counts down, and an expired
+  buffer says so instead of reopening half a window.
+
+The agent gets the same engine through twelve tools (`list_tabs`, `close_tabs`, `group_tabs`,
+`close_duplicate_tabs`, `search_tabs`, `suspend_heavy_tabs`, `save_session`, …), so a task can tidy
+tabs mid-flight. Closing the only tab in a window is refused: that would close the window.
+
+---
+
 ## Roadmap
 
 | Batch | Scope                                                                  | Status |
@@ -166,8 +202,8 @@ agent loop uses before it reaches a prompt.
 | 6     | Side panel UX: live step timeline, approval cards, on-page element-map overlay, action highlight, History tab | done |
 | 7     | Feature A: smart form filler + encrypted profile vault                  | done |
 | 8     | Feature B: research engine                                              | done |
-| 9     | Feature C: tab manager                                                  | next |
-| 10    | Recipes, audit log, cost meter, Playwright E2E                          | — |
+| 9     | Feature C: tab manager                                                  | done |
+| 10    | Recipes, audit log, cost meter, Playwright E2E                          | next |
 
 ## Safety model
 

@@ -9,13 +9,14 @@ import {
 
 import { handleVaultRequest } from './vaultApi'
 import { researchFollowup, startResearch, stopResearch } from './research'
+import { runTabCommand, runTabIntent, startTabWatchers } from './tabApi'
 import { resolveApproval, resolveQuestion, startTask, stopTask } from './task'
 
 /**
  * Background service worker = agent orchestrator.
  * Batches 1-2 wire up lifecycle + the side panel <-> tab message channel.
- * Batch 5 adds the task router, Batch 8 the research router: both live in
- * their own module and only message plumbing stays here.
+ * Batch 5 adds the task router, Batch 8 the research router, Batch 9 the tab
+ * manager: each lives in its own module and only message plumbing stays here.
  */
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -33,6 +34,9 @@ chrome.runtime.onStartup.addListener(() => {
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => console.error('[navigator] sidePanel setup failed', error))
 })
+
+// The tab manager's last-seen clock: registrations happen once per worker boot.
+startTabWatchers()
 
 async function getActiveTabId(): Promise<number> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
@@ -154,6 +158,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         sendResponse({ ok: false, error: result.error ?? 'The follow-up answer failed.' } satisfies BackgroundResponse)
       })
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
+      })
+    return true
+  }
+
+  if (message.kind === 'tab-command') {
+    runTabCommand(message.text)
+      .then((report) => sendResponse({ ok: true, report } satisfies BackgroundResponse))
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
+      })
+    return true
+  }
+
+  if (message.kind === 'tab-intent') {
+    runTabIntent(message.intent)
+      .then((report) => sendResponse({ ok: true, report } satisfies BackgroundResponse))
       .catch((error: unknown) => {
         const text = error instanceof Error ? error.message : String(error)
         sendResponse({ ok: false, error: text } satisfies BackgroundResponse)

@@ -5,6 +5,7 @@ import type { PageState } from '@/types/pageState'
 import type { Profile, ProfileMeta } from '@/types/vault'
 import type { FormFieldView } from '@/content/formFields'
 import type { ChatMessage, CompletionResult } from '@/llm/types'
+import type { TabIntent, TabReport } from '@/tabs/types'
 
 /**
  * Tool contract (spec §4). The LLM sees name + description + JSON Schema;
@@ -38,6 +39,18 @@ export interface VaultAccess {
   get(id: string): Promise<Profile | null>
 }
 
+/**
+ * The tab manager (spec §8), injected by the loop so tab tools stay in the
+ * registry like every other capability. `guard.keepIds` protects the tab the
+ * agent is working in from a bulk close.
+ */
+export interface TabOps {
+  run(
+    intent: TabIntent,
+    options?: { guard?: { keepIds: number[] }; signal?: AbortSignal },
+  ): Promise<TabReport>
+}
+
 export interface ToolContext {
   host: ToolHost
   tabId: number
@@ -48,6 +61,7 @@ export interface ToolContext {
    */
   complete?(messages: ChatMessage[], kind: 'big' | 'small'): Promise<CompletionResult>
   vault?: VaultAccess
+  tabs?: TabOps
 }
 
 export interface ToolSpec<S extends z.ZodType = z.ZodType> {

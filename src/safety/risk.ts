@@ -50,6 +50,20 @@ const BASE_RISK: Record<string, RiskLevel> = {
   // Writes many fields at once, but never submits and never touches the
   // hard-blocked kinds — the filler refuses those before it starts.
   fill_form: 'medium',
+  // Tab manager (spec §8). Closing is reversible for 60 s but still removes
+  // the user's work, so it always asks in Auto mode.
+  list_tabs: 'safe',
+  search_tabs: 'safe',
+  index_open_pages: 'safe',
+  list_stale_tabs: 'safe',
+  switch_tab: 'low',
+  group_tabs: 'low',
+  save_session: 'low',
+  restore_session: 'low',
+  close_duplicate_tabs: 'high',
+  close_tabs: 'high',
+  undo_tab_close: 'low',
+  suspend_heavy_tabs: 'medium',
 }
 
 const PAYMENT = /\b(checkout|pay now|place order|buy now|purchase|subscribe|proceed to payment)\b|\bcard (number|cvv|details)\b|\bbilling address\b/i

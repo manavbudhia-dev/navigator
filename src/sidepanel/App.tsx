@@ -3,10 +3,10 @@ import { Bot, Clock, Copy, Search, Settings, Sparkle, UserRound, X } from 'lucid
 
 import { AgentPanel } from './panels/AgentPanel'
 import { HistoryPanel } from './panels/HistoryPanel'
-import { PlaceholderPanel } from './panels/PlaceholderPanel'
 import { ProfilesPanel } from './panels/ProfilesPanel'
 import { ResearchPanel } from './panels/ResearchPanel'
 import { SettingsPanel } from './panels/SettingsPanel'
+import { TabsPanel } from './panels/TabsPanel'
 import { useVault } from './useVault'
 import { cn } from '@/lib/utils'
 
@@ -21,15 +21,9 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 type ViewId = TabId | 'settings'
 
-const COMING_IN: Record<Exclude<TabId, 'agent' | 'history' | 'profiles' | 'research'>, string> = {
-  tabs: 'Batch 9',
-}
-
 export default function App() {
   const [view, setView] = useState<ViewId>('agent')
   const vault = useVault()
-
-  const activeTab = TABS.find((tab) => tab.id === view)
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -92,10 +86,10 @@ export default function App() {
           <ProfilesPanel vault={vault} />
         ) : view === 'research' ? (
           <ResearchPanel />
-        ) : view === 'settings' ? (
-          <SettingsPanel />
+        ) : view === 'tabs' ? (
+          <TabsPanel />
         ) : (
-          <PlaceholderPanel title={activeTab?.label ?? ''} arriving={COMING_IN[view]} />
+          <SettingsPanel />
         )}
       </main>
     </div>

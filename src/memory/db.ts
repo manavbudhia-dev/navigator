@@ -53,6 +53,34 @@ export interface ResearchNoteRow {
   note: unknown
 }
 
+/** When a URL was last in the foreground — the tab manager's only clock. */
+export interface TabStatRow {
+  urlKey: string
+  title: string
+  lastSeenAt: number
+  opens: number
+}
+
+/** Page text of one URL, so tab search can look inside pages (spec §8). */
+export interface TabIndexRow {
+  urlKey: string
+  url: string
+  title: string
+  text: string
+  chars: number
+  indexedAt: number
+}
+
+/** A named, tagged snapshot of open tabs (spec §8). */
+export interface SessionRow {
+  id: string
+  createdAt: number
+  name: string
+  note: string
+  tags: string[]
+  tabs: { url: string; title: string; windowId: number; index: number }[]
+}
+
 /**
  * Local persistence. IndexedDB is available in both the service worker and
  * the side panel, so every context reads the same settings. Later batches
@@ -64,6 +92,9 @@ export class NavigatorDB extends Dexie {
   vault!: Table<VaultRow, string>
   researchRuns!: Table<ResearchRunRow, string>
   researchNotes!: Table<ResearchNoteRow, string>
+  tabStats!: Table<TabStatRow, string>
+  tabIndex!: Table<TabIndexRow, string>
+  sessions!: Table<SessionRow, string>
 
   constructor() {
     super('navigator')
@@ -85,6 +116,17 @@ export class NavigatorDB extends Dexie {
       vault: 'id, updatedAt',
       researchRuns: 'id, createdAt',
       researchNotes: 'id, runId, url',
+    })
+    // Tab manager (spec §8): last-seen clock, page-text index, saved sessions.
+    this.version(5).stores({
+      settings: 'key',
+      audit: '++id, at, tool',
+      vault: 'id, updatedAt',
+      researchRuns: 'id, createdAt',
+      researchNotes: 'id, runId, url',
+      tabStats: 'urlKey, lastSeenAt',
+      tabIndex: 'urlKey, indexedAt',
+      sessions: 'id, createdAt',
     })
   }
 }

@@ -8,6 +8,7 @@ import type { ActRequest, ActResult } from './actions'
 import type { AgentMode } from './agent'
 import type { FormFieldView } from '@/content/formFields'
 import type { ArticlePayload, ResearchDepth } from '@/research/types'
+import type { TabIntent, TabReport } from '@/tabs/types'
 import type { PageState } from './pageState'
 import type { VaultReply, VaultRequest } from './vault'
 
@@ -35,6 +36,8 @@ export type BackgroundMessage =
   | { kind: 'run-research'; question: string; depth: ResearchDepth }
   | { kind: 'stop-research' }
   | { kind: 'research-followup'; runId: string; question: string }
+  | { kind: 'tab-command'; text: string }
+  | { kind: 'tab-intent'; intent: TabIntent }
 
 export type BackgroundResponse =
   | { ok: true; meta: PageMeta }
@@ -42,6 +45,7 @@ export type BackgroundResponse =
   | { ok: true; fields: FormFieldView[] }
   | { ok: true; vault: VaultReply }
   | { ok: true; answer: string }
+  | { ok: true; report: TabReport }
   | { ok: true; accepted: boolean; error?: string }
   | { ok: false; error: string }
   | ActResult
@@ -79,7 +83,9 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
       value.kind === 'vault' ||
       value.kind === 'run-research' ||
       value.kind === 'stop-research' ||
-      value.kind === 'research-followup')
+      value.kind === 'research-followup' ||
+      value.kind === 'tab-command' ||
+      value.kind === 'tab-intent')
   )
 }
 

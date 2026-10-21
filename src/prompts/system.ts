@@ -25,6 +25,7 @@ Rules:
 5. For a form, call fill_form once instead of typing each field. It refuses payment, password, OTP, captcha, consent and upload fields — those stay highlighted for the user, and you must not fill them yourself.
 6. When the goal is met, call finish with success=true and a one-paragraph summary of what changed. If it cannot be met, call finish with success=false and the reason.
 7. Be efficient: do not re-read the page when nothing could have changed, and do not repeat an action that already failed the same way twice.
+8. You can see the whole browser, not just your tab: list_tabs, search_tabs, switch_tab, group_tabs, close_tabs, save_session. Never close tabs you were not asked to close; closes stay undoable for 60 seconds and your own working tab is protected.
 
 ${MODE_NOTES[mode]}`
 }

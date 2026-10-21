@@ -2,11 +2,13 @@ import { runAgentTask, type AgentHooks, type ApprovalRequest } from '@/agent/loo
 import { loadModelConfig } from '@/llm/config'
 import { KillSwitch } from '@/safety/killSwitch'
 import { coreTools } from '@/tools/definitions'
+import { tabTools } from '@/tools/tabTools'
 import { ToolRegistry } from '@/tools/registry'
 import type { ContentMessage } from '@/types/messages'
 import type { TaskEvent } from '@/types/task'
 import type { AgentMode } from '@/types/agent'
 
+import { createTabOps } from './tabApi'
 import { createToolHost } from './host'
 import { vault } from './vaultApi'
 
@@ -89,11 +91,12 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
       mode,
       tabId,
       host: createToolHost(),
-      registry: new ToolRegistry(coreTools()),
+      registry: new ToolRegistry([...coreTools(), ...tabTools()]),
       config,
       hooks,
       signal: kill.signal,
       vault,
+      tabs: await createTabOps(),
     })
       .then((outcome) => {
         broadcast({
