@@ -6,10 +6,12 @@ import {
   type ContentResponse,
 } from '@/types/messages'
 
+import { resolveApproval, resolveQuestion, startTask, stopTask } from './task'
+
 /**
  * Background service worker = agent orchestrator.
  * Batches 1-2 wire up lifecycle + the side panel <-> tab message channel.
- * The agent loop, tool executor and LLM client land in later batches.
+ * Batch 5 adds the task router: run/stop/approve/answer live in ./task.
  */
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -37,8 +39,36 @@ async function getActiveTabId(): Promise<number> {
 function toContentMessage(message: BackgroundMessage): ContentMessage {
   if (message.kind === 'ping-active-tab') return { kind: 'ping' }
   if (message.kind === 'act-active-tab') return { kind: 'act', action: message.action }
-  if (message.includeOffViewport === undefined) return { kind: 'get-page-state' }
-  return { kind: 'get-page-state', includeOffViewport: message.includeOffViewport }
+  if (message.kind === 'get-page-state-active-tab') {
+    return message.includeOffViewport === undefined
+      ? { kind: 'get-page-state' }
+      : { kind: 'get-page-state', includeOffViewport: message.includeOffViewport }
+  }
+  throw new Error(`Not a tab message: ${message.kind}`)
+}
+
+type TaskControl = { ok: boolean; error?: string }
+
+function control(apply: () => TaskControl): BackgroundResponse {
+  const result = apply()
+  return {
+    ok: true,
+    accepted: result.ok,
+    ...(result.error !== undefined ? { error: result.error } : {}),
+  }
+}
+
+function handleTaskMessage(message: BackgroundMessage): BackgroundResponse | null {
+  switch (message.kind) {
+    case 'stop-task':
+      return control(stopTask)
+    case 'approve-action':
+      return control(() => resolveApproval(message.id, message.approved))
+    case 'answer-question':
+      return control(() => resolveQuestion(message.id, message.answer))
+    default:
+      return null
+  }
 }
 
 async function forwardToActiveTab(message: BackgroundMessage): Promise<BackgroundResponse> {
@@ -58,6 +88,28 @@ async function forwardToActiveTab(message: BackgroundMessage): Promise<Backgroun
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isBackgroundMessage(message)) return false
+
+  if (message.kind === 'run-task') {
+    startTask(message.goal, message.mode)
+      .then((result) => {
+        sendResponse({
+          ok: true,
+          accepted: result.ok,
+          ...(result.error !== undefined ? { error: result.error } : {}),
+        } satisfies BackgroundResponse)
+      })
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : String(error)
+        sendResponse({ ok: false, error: text } satisfies BackgroundResponse)
+      })
+    return true
+  }
+
+  const taskResponse = handleTaskMessage(message)
+  if (taskResponse !== null) {
+    sendResponse(taskResponse)
+    return false
+  }
 
   forwardToActiveTab(message)
     .then(sendResponse)

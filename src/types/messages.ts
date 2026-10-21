@@ -5,6 +5,7 @@
  */
 
 import type { ActRequest, ActResult } from './actions'
+import type { AgentMode } from './agent'
 import type { PageState } from './pageState'
 
 export type PageMeta = {
@@ -21,10 +22,15 @@ export type BackgroundMessage =
   | { kind: 'ping-active-tab' }
   | { kind: 'get-page-state-active-tab'; includeOffViewport?: boolean }
   | { kind: 'act-active-tab'; action: ActRequest }
+  | { kind: 'run-task'; goal: string; mode: AgentMode }
+  | { kind: 'stop-task' }
+  | { kind: 'approve-action'; id: string; approved: boolean }
+  | { kind: 'answer-question'; id: string; answer: string }
 
 export type BackgroundResponse =
   | { ok: true; meta: PageMeta }
   | { ok: true; pageState: PageState }
+  | { ok: true; accepted: boolean; error?: string }
   | { ok: false; error: string }
   | ActResult
 
@@ -46,7 +52,11 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
     'kind' in value &&
     (value.kind === 'ping-active-tab' ||
       value.kind === 'get-page-state-active-tab' ||
-      value.kind === 'act-active-tab')
+      value.kind === 'act-active-tab' ||
+      value.kind === 'run-task' ||
+      value.kind === 'stop-task' ||
+      value.kind === 'approve-action' ||
+      value.kind === 'answer-question')
   )
 }
 

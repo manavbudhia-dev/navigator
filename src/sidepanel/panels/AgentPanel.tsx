@@ -11,14 +11,18 @@ import {
   Paperclip,
   Play,
   Plug,
+  Send,
   Sparkle,
+  Square,
   Wifi,
 } from 'lucide-react'
 
 import { StatusPill, type ConnectionStatus } from '../components/StatusPill'
+import { useTaskBridge } from '../useTaskBridge'
 import { inExtension } from '@/lib/extension'
 import { cn } from '@/lib/utils'
 import { AGENT_MODES, MODE_LABELS, type AgentMode } from '@/types/agent'
+import type { TaskEvent } from '@/types/task'
 import type { BackgroundMessage, BackgroundResponse, PageMeta } from '@/types/messages'
 
 const MODE_DESCRIPTIONS: Record<AgentMode, string> = {
@@ -56,7 +60,8 @@ export function AgentPanel() {
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [answerDraft, setAnswerDraft] = useState('')
+  const task = useTaskBridge()
 
   const runDiagnostics = useCallback(async () => {
     if (!inExtension) {
@@ -109,15 +114,13 @@ export function AgentPanel() {
     void runDiagnostics()
   }, [runDiagnostics])
 
-  function handleRun() {
-    setNotice(
-      inExtension
-        ? 'Connection ready. Autonomous execution arrives in Batch 5.'
-        : 'Open this panel from the loaded extension to run tasks.',
-    )
+  async function handleRun() {
+    const trimmed = goal.trim()
+    if (trimmed.length === 0 || task.running) return
+    await task.start(trimmed, mode)
   }
 
-  const canSend = goal.trim().length > 0
+  const canSend = goal.trim().length > 0 && !task.running
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -161,7 +164,7 @@ export function AgentPanel() {
           </button>
           <button
             type="button"
-            onClick={handleRun}
+            onClick={() => void handleRun()}
             disabled={!canSend}
             aria-label="Send task"
             className={cn(
@@ -241,21 +244,102 @@ export function AgentPanel() {
               </>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={handleRun}
-            className="flex shrink-0 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <Play className="size-4" strokeWidth={2} aria-hidden />
-            Run task
-          </button>
+          {task.running ? (
+            <button
+              type="button"
+              onClick={() => void task.stop()}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+            >
+              <Square className="size-4" strokeWidth={2} aria-hidden />
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleRun()}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              <Play className="size-4" strokeWidth={2} aria-hidden />
+              Run task
+            </button>
+          )}
         </div>
-        {notice ? (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700" role="status">
-            {notice}
+        {task.startError ? (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">
+            {task.startError}
           </p>
         ) : null}
       </section>
+
+      {task.events.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          {task.approval ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <p className="text-sm font-semibold text-amber-900">
+                Approve: {task.approval.summary}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                risk: {task.approval.level}
+                {task.approval.hardBlock ? ` · hard block (${task.approval.hardBlock})` : ''}
+                {task.approval.reasons.length > 0 ? ` · ${task.approval.reasons.join('; ')}` : ''}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void task.answerApproval(task.approval?.id ?? '', true)}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                >
+                  Allow once
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void task.answerApproval(task.approval?.id ?? '', false)}
+                  className="rounded-lg border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+                >
+                  Deny
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {task.question ? (
+            <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
+              <p className="text-sm font-semibold text-blue-900">{task.question.question}</p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={answerDraft}
+                  onChange={(event) => setAnswerDraft(event.target.value)}
+                  placeholder="Your answer…"
+                  className="h-8 min-w-0 flex-1 rounded-lg border bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void task.answerQuestion(task.question?.id ?? '', answerDraft || '(no answer)')
+                    setAnswerDraft('')
+                  }}
+                  className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                >
+                  <Send className="size-3.5" strokeWidth={2} aria-hidden />
+                  Send
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border bg-card p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-sm font-semibold">Live task</h3>
+              <StatusPill status={task.running ? 'checking' : 'connected'} className="ml-auto" />
+            </div>
+            <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto text-xs">
+              {task.events.map((event, index) => (
+                <TimelineRow key={index} event={event} />
+              ))}
+            </ol>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border bg-card p-3">
         <p className="mb-2 text-xs text-muted-foreground">Active tab</p>
@@ -368,4 +452,51 @@ export function AgentPanel() {
       </section>
     </div>
   )
+}
+
+function clip(text: string, max = 160): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
+}
+
+function TimelineRow({ event }: { event: TaskEvent }) {
+  switch (event.type) {
+    case 'step':
+      return <li className="mt-1 font-semibold text-muted-foreground">Step {event.n}</li>
+    case 'thinking':
+      return <li className="italic text-muted-foreground">{clip(event.text)}</li>
+    case 'action':
+      return <li>→ {event.summary}</li>
+    case 'result':
+      return (
+        <li className={event.ok ? 'text-emerald-600' : 'text-red-600'}>
+          {event.ok ? '✓' : '✗'} {clip(event.content)}
+        </li>
+      )
+    case 'blocked':
+      return (
+        <li className="text-red-600">
+          ⛔ {event.tool}: {event.reason}
+        </li>
+      )
+    case 'approval':
+      return <li className="text-amber-700">⏳ awaiting approval: {clip(event.summary)}</li>
+    case 'approval-resolved':
+      return <li className="text-muted-foreground">{event.approved ? 'approved' : 'denied'}</li>
+    case 'question':
+      return <li className="text-blue-700">❓ {clip(event.question)}</li>
+    case 'question-resolved':
+      return null
+    case 'note':
+      return <li className="text-amber-700">ℹ {event.text}</li>
+    case 'done':
+      return (
+        <li className="mt-1 font-semibold">
+          {event.success ? 'Done' : 'Failed'} — {clip(event.summary)} · {event.steps} steps · ~
+          {event.promptTokens + event.completionTokens} tokens
+        </li>
+      )
+    case 'failed':
+      return <li className="mt-1 font-semibold text-red-600">Failed: {event.error}</li>
+  }
 }

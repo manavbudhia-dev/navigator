@@ -26,7 +26,7 @@ export interface RiskInput {
   element?: {
     role?: ElementRole
     tag?: string
-    inputType?: string
+    inputType?: string | null
     /** Visible text, aria-label, placeholder, name, id. */
     text?: string
   } | null

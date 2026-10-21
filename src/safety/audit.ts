@@ -20,7 +20,14 @@ export interface AuditInput {
 
 export async function recordAudit(input: AuditInput, persist = true): Promise<AuditRow> {
   const row: AuditRow = { at: Date.now(), ...input }
-  if (persist) await db.audit.add(row)
+  if (persist) {
+    try {
+      await db.audit.add(row)
+    } catch (error) {
+      // A failed write must never abort a running task.
+      console.warn('[navigator] audit write failed', error)
+    }
+  }
   return row
 }
 
