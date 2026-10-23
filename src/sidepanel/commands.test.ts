@@ -42,7 +42,7 @@ function find(id: string) {
 describe('buildCommands', () => {
   it('offers every group the palette lays out', () => {
     const groups = new Set(buildCommands(controls()).map((command) => command.group))
-    const expected: CommandGroup[] = ['Task', 'Mode', 'Go to', 'View', 'Data']
+    const expected: CommandGroup[] = ['Task', 'Mode', 'Safety', 'Go to', 'View', 'Data']
     expect([...groups].sort()).toEqual([...expected].sort())
   })
 
@@ -129,5 +129,14 @@ describe('buildCommands', () => {
   it('finds "stop" before "switch to auto mode"', () => {
     const commands = buildCommands(controls())
     expect(filterCommands('stop', commands)[0]?.id).toBe('task.stop')
+  })
+
+  it('offers the Auto mode site list by name, and opens it', () => {
+    const commands = buildCommands(controls())
+    expect(filterCommands('allowlist', commands)[0]?.id).toBe('safety.auto-sites')
+    expect(filterCommands('allow this site', commands)[0]?.id).toBe('safety.auto-sites')
+    const panel = controls()
+    buildCommands(panel).find((entry) => entry.id === 'safety.auto-sites')?.run()
+    expect(panel.go).toHaveBeenCalledWith('settings')
   })
 })

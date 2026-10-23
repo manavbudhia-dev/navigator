@@ -101,7 +101,7 @@ semantic search, sessions and the undo buffer — none of it imports Chrome).
 | Permission        | Needed for                                                                 |
 | ----------------- | -------------------------------------------------------------------------- |
 | `sidePanel`       | Primary UI surface                                                          |
-| `storage`         | Model config, domain allowlist/blocklist, audit log                         |
+| `storage`         | Model config, Auto mode site list, audit log                                |
 | `tabs`            | `list_tabs` / `switch_tab` / `close_tabs`, plus URL + title for page state   |
 | `tabGroups`       | `group_tabs` tool and automatic tab grouping                                |
 | `activeTab`       | Act on the tab the user invoked Navigator from                              |
@@ -398,16 +398,54 @@ come back in the theme you left.
 
 ---
 
+## Auto mode site list
+
+**Auto** mode is the mode that says "I'll do it myself", and the only promise it makes is on the sites
+you have allowed. That list lives in Settings → Auto mode sites, in one row of the same IndexedDB
+store as the model config: nothing is synced, and an empty list means Navigator asks before every
+write, which is the safe direction to fail in.
+
+| Piece | File | Job |
+| ----- | ---- | --- |
+| The rules | `src/safety/allowlist.ts` | normalise a host, decide whether a page is under an allowed site |
+| The storage | `src/safety/allowlistStore.ts` | remember the list between panel opens |
+| The gate | `src/safety/modePolicy.ts` | turn mode + risk + site into allow, ask or block |
+| The worker | `src/background/allowApi.ts` | write a rule asked for by an approval card |
+
+**A rule is a host, not a URL.** Allowing `example.com` covers `shop.example.com`, whichever scheme the
+page happens to use, because subdomains inherit the trust you gave the site. The port and the path are
+left out on purpose: a promise about `example.com:8443` would be a promise about a server, not a site.
+`evil-example.com` is not under `example.com`, so a lookalike host never slips through a suffix match.
+
+**Reads and control tools are not gated.** Only a write action asks. A page that happens to be a
+checkout page does not stop Navigator from reading it — the hard blocks (payment fields, passwords
+being created, consent checkboxes, OTP, destructive confirmations, sensitive uploads) are about the
+action, and they require your approval whatever the site list says.
+
+**A run keeps the list it started with.** The worker reads the list once, when the task starts, so a
+site you allow while a task is waiting for you takes effect on the next task. The confirmation on the
+approval card says exactly that rather than leaving you to guess.
+
+**"Allow `shop.test` in Auto mode"** appears on an approval card only when the site is the reason the
+card is up. Approving a step and changing a standing rule are two decisions, so they stay two buttons.
+The same list is reachable from the command palette (`allowlist`) and from
+`corepack pnpm exec node scripts/allowlist-check.mjs`, which types into the real card, reloads the
+panel and reads the stored rows back.
+
+---
+
 ## End-to-end tests
 
-`corepack pnpm test:e2e` runs the three flows the spec names (§13.6) against the real built
-extension — real service worker, real content scripts, real IndexedDB, real Chrome tab groups:
+`corepack pnpm test:e2e` runs the flows the spec names (§13.6), plus the Auto mode promise, against
+the real built extension — real service worker, real content scripts, real IndexedDB, real Chrome tab
+groups:
 
 | Flow | What it proves |
 | ---- | -------------------------------------------------------------- |
 | Form fill | A task typed into the Agent tab fills the fixture job application from a vault profile, asks for approval first, and leaves the card, CV, password, OTP, consent and CAPTCHA fields untouched. The form is never submitted. |
 | Research | A question becomes a plan, real background tabs, a scraped results page, ranked sources and a cited five-source answer. |
 | Tab grouping | A sentence in the Tabs tab ends with Chrome itself holding the groups. |
+| Auto mode list | Auto stops on an unlisted site, the one click on the card writes the rule, and the next task fills the same form without asking. |
 
 Nothing reaches the internet. `e2e/mock-server.mjs` is the whole outside world: the form page, five
 articles, a search results page and an OpenAI-compatible `/v1/chat/completions` that streams a fixed
@@ -453,11 +491,14 @@ in one browser would fight over it.
 | 11a   | Interaction and navigation tools: hover, press_key, select_option, check, upload_file, drag_and_drop, history, open_tab, wait_for | done |
 | 11b   | Data tools: structured extraction, screenshot, file output, long-term memory | done |
 | 11c   | Command palette, keyboard-first navigation, screen-reader announcements | done |
+| 12    | Auto mode site list: rules, storage, gate, Settings card, approval-card shortcut, palette entry, E2E | done |
 
 ## Safety model
 
 Three autonomy modes — **Observe** (read-only), **Co-pilot** (approve each write action),
 **Auto** (autonomous within your allowlist). Every action is risk-scored; high-risk actions
-(submit, pay, delete, send, post) always require explicit approval. Page text is treated as
+(submit, pay, delete, send, post) always require explicit approval. Auto mode goes one step further:
+on a site you have not allowed it asks before every write, even a low-risk one
+([the site list](#auto-mode-site-list)). Page text is treated as
 untrusted data and wrapped so prompt-injection attempts in page content are logged and ignored,
 never executed. Captchas and 2FA are never solved automatically — Navigator pauses and asks you.

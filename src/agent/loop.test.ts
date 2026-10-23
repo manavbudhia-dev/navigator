@@ -218,7 +218,7 @@ describe('runAgentTask', () => {
 
   it('auto mode asks first on a site the user has not allowed', async () => {
     const probe: AuditProbe = { url: async () => 'https://other.test/cart', thumb: async () => null }
-    const { promise, approvals, acts } = run(
+    const { promise, approvals, events, acts } = run(
       [toolCall('read_page', {}), toolCall('click', { index: 0 }), toolCall('finish', { success: true, summary: 'ok' })],
       'auto',
       true,
@@ -228,6 +228,12 @@ describe('runAgentTask', () => {
     expect(outcome.success).toBe(true)
     expect(approvals).toHaveLength(1)
     expect(approvals[0]!.reasons.join(' ')).toContain('other.test')
+    // The card names the site, so "allow this site" has something to allow.
+    expect(approvals[0]!.host).toBe('other.test')
+    const card = events.find(
+      (event): event is Extract<TaskEvent, { type: 'approval' }> => event.type === 'approval',
+    )
+    expect(card?.host).toBe('other.test')
     expect(acts).toEqual(['click:0'])
   })
 

@@ -47,6 +47,7 @@ function approvalRequest(id: string): Parameters<AgentHooks['requestApproval']>[
     level: 'high',
     reasons: [],
     hardBlock: 'payment',
+    host: 'shop.example.test',
   }
 }
 

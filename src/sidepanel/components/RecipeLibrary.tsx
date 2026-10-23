@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { ChevronDown, Clock, Download, Play, Square, Trash2, Upload, Workflow } from 'lucide-react'
 
 import { useRecipes, type PendingStep } from '../useRecipes'
+import { AllowSiteButton } from './AllowSiteButton'
 import { saveTextFile, stampedFilename } from '@/lib/download'
 import { importRecipesJson, recipeFileJson, recipesExportJson } from '@/recipes/store'
 import type { Recipe, RecipeSchedule } from '@/recipes/types'
@@ -270,6 +271,11 @@ function ApprovalCard({ approval, onAnswer }: { approval: PendingStep; onAnswer:
           Deny
         </button>
       </div>
+      {approval.hardBlock === null && approval.host !== '' ? (
+        <div className="mt-2 border-t border-amber-200 pt-2">
+          <AllowSiteButton host={approval.host} />
+        </div>
+      ) : null}
     </div>
   )
 }

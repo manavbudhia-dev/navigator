@@ -200,7 +200,8 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
 
   const permit = async (step: RecipeStep, index: number | null): Promise<boolean> => {
     const { kind, assessment } = riskFor(step, registry, index, liveLines, pageUrl)
-    const decision = decide(options.mode, kind, assessment, siteFor(pageUrl, allowlist))
+    const site = siteFor(pageUrl, allowlist)
+    const decision = decide(options.mode, kind, assessment, site)
     if (decision === 'allow') return true
 
     if (decision === 'block') {
@@ -216,11 +217,11 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
 
     const id = crypto.randomUUID()
     const summary = step.note === '' ? step.tool : step.note
-    const siteReason = autoSiteReason(options.mode, siteFor(pageUrl, allowlist))
+    const siteReason = autoSiteReason(options.mode, site)
     const reasons = siteReason === null ? assessment.reasons : [...assessment.reasons, siteReason]
     // The agent loop emits its own approval cards; a replay is not a loop, so
     // the card has to be put on the wire from here.
-    broadcast({ type: 'approval', id, tool: step.tool, args: step.args, summary, level: assessment.level, reasons, hardBlock: assessment.hardBlock })
+    broadcast({ type: 'approval', id, tool: step.tool, args: step.args, summary, level: assessment.level, reasons, hardBlock: assessment.hardBlock, host: site.host })
     const approved = await hooks.requestApproval({
       id,
       tool: step.tool,
@@ -229,6 +230,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
       level: assessment.level,
       reasons,
       hardBlock: assessment.hardBlock,
+      host: site.host,
     })
     broadcast({ type: 'approval-resolved', id, approved })
     await audit(

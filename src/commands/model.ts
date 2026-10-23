@@ -4,10 +4,10 @@
  * component is only a list box and the interesting part is unit-testable.
  */
 
-export type CommandGroup = 'Task' | 'Mode' | 'Go to' | 'View' | 'Data'
+export type CommandGroup = 'Task' | 'Mode' | 'Safety' | 'Go to' | 'View' | 'Data'
 
 /** The order groups appear in, whatever order the commands were declared in. */
-export const GROUP_ORDER: readonly CommandGroup[] = ['Task', 'Mode', 'Go to', 'View', 'Data']
+export const GROUP_ORDER: readonly CommandGroup[] = ['Task', 'Mode', 'Safety', 'Go to', 'View', 'Data']
 
 export interface Command {
   id: string

@@ -87,6 +87,17 @@ export function buildCommands(controls: PanelControls): RunnableCommand[] {
     run: () => controls.setMode(value),
   }))
 
+  const safety: RunnableCommand[] = [
+    {
+      id: 'safety.auto-sites',
+      title: 'Allow a site in Auto mode',
+      group: 'Safety',
+      keywords: ['allowlist', 'site', 'trust', 'rule'],
+      hint: 'the list Auto mode acts on without asking',
+      run: () => controls.go('settings'),
+    },
+  ]
+
   const go: RunnableCommand[] = VIEWS.map((view) => ({
     id: `go.${view.id}`,
     title: `Go to ${view.label}`,
@@ -131,5 +142,5 @@ export function buildCommands(controls: PanelControls): RunnableCommand[] {
     },
   ]
 
-  return [...task, ...modes, ...go, ...view, ...data]
+  return [...task, ...modes, ...safety, ...go, ...view, ...data]
 }

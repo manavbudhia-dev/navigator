@@ -18,6 +18,7 @@ export interface PendingApproval {
   level: string
   reasons: string[]
   hardBlock: string | null
+  host: string
 }
 
 export interface PendingQuestion {
@@ -61,6 +62,7 @@ export function useTaskBridge() {
         level: event.level,
         reasons: event.reasons,
         hardBlock: event.hardBlock,
+        host: event.host,
       })
     } else if (event.type === 'approval-resolved') {
       setApproval((prev) => (prev?.id === event.id ? null : prev))

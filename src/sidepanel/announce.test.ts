@@ -22,6 +22,7 @@ const EVENTS: TaskEvent[] = [
     level: 'high',
     reasons: ['payment'],
     hardBlock: 'payment',
+    host: 'shop.example.test',
   },
   { type: 'approval-resolved', id: 'a1', approved: false },
   { type: 'question', id: 'q1', question: 'Which seat class?' },

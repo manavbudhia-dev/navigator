@@ -76,7 +76,8 @@ checks.listboxWired = await page.evaluate(() => {
 const groupsShown = await page.evaluate(() =>
   [...document.querySelectorAll('[role="group"] > h3')].map((heading) => heading.textContent?.trim()),
 )
-checks.groupsInPaletteOrder = JSON.stringify(groupsShown) === JSON.stringify(['Task', 'Mode', 'Go to', 'View', 'Data'])
+checks.groupsInPaletteOrder =
+  JSON.stringify(groupsShown) === JSON.stringify(['Task', 'Mode', 'Safety', 'Go to', 'View', 'Data'])
 checks.listsEveryCommand = (await optionCount()) >= 14
 
 // 3. A greyed command explains itself instead of disappearing.

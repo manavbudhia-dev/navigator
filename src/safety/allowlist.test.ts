@@ -14,6 +14,10 @@ describe('normalizeHost', () => {
     expect(normalizeHost('')).toBe('')
     expect(normalizeHost('   ')).toBe('')
     expect(normalizeHost('http://')).toBe('')
+    // A host with a space in it is two words, not a site. Chrome's URL parser
+    // would answer `not%20a%20host`, so the refusal is made here instead.
+    expect(normalizeHost('not a host')).toBe('')
+    expect(normalizeHost('shop.test evil.test')).toBe('')
   })
 })
 

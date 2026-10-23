@@ -35,6 +35,8 @@ export interface ApprovalRequest {
   level: RiskLevel
   reasons: string[]
   hardBlock: string | null
+  /** The page's host, `''` when the action is not on a plain web page. */
+  host: string
 }
 
 export interface AgentHooks {
@@ -460,7 +462,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
 
       if (decision === 'require-approval') {
         const id = newId()
-        hooks.emit({ type: 'approval', id, tool: call.name, args: shownArgs, summary: actionSummary, level: assessment.level, reasons, hardBlock: assessment.hardBlock })
+        hooks.emit({ type: 'approval', id, tool: call.name, args: shownArgs, summary: actionSummary, level: assessment.level, reasons, hardBlock: assessment.hardBlock, host: site.host })
         const approved = await hooks.requestApproval({
           id,
           tool: call.name,
@@ -469,6 +471,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
           level: assessment.level,
           reasons,
           hardBlock: assessment.hardBlock,
+          host: site.host,
         })
         hooks.emit({ type: 'approval-resolved', id, approved })
         if (!approved) {

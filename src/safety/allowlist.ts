@@ -17,7 +17,10 @@ export interface SiteContext {
 /** Strip the scheme, the path and a leading `www.`; lowercase the rest. */
 export function normalizeHost(value: string): string {
   const raw = value.trim().toLowerCase()
-  if (raw === '') return ''
+  // Refused here rather than left to the URL parser: a host cannot contain a
+  // space, and Chrome's parser answers `%20a%20host` where Node's answers
+  // "invalid", so the two engines would disagree about what is a rule.
+  if (raw === '' || /\s/.test(raw)) return ''
   let candidate = raw
   if (!/^[a-z][a-z0-9+.-]*:\/\//.test(candidate)) candidate = `https://${candidate}`
   let url: URL
@@ -26,7 +29,7 @@ export function normalizeHost(value: string): string {
   } catch {
     return ''
   }
-  if (url.hostname === '') return ''
+  if (url.hostname === '' || url.hostname.includes('%')) return ''
   return url.hostname.replace(/^www\./, '')
 }
 

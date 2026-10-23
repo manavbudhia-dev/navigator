@@ -9,7 +9,7 @@ export type TaskEvent =
   | { type: 'step'; n: number }
   | { type: 'thinking'; text: string }
   | { type: 'action'; id: string; tool: string; args: Record<string, unknown>; summary: string }
-  | { type: 'approval'; id: string; tool: string; args: Record<string, unknown>; summary: string; level: RiskLevel; reasons: string[]; hardBlock: string | null }
+  | { type: 'approval'; id: string; tool: string; args: Record<string, unknown>; summary: string; level: RiskLevel; reasons: string[]; hardBlock: string | null; host: string }
   | { type: 'approval-resolved'; id: string; approved: boolean }
   | { type: 'question'; id: string; question: string }
   | { type: 'question-resolved'; id: string }
