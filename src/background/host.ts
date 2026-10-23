@@ -33,6 +33,48 @@ export async function waitForTabComplete(tabId: number, timeoutMs = 15_000): Pro
 }
 
 /**
+ * Waits for the tab to enter `status`, or gives up after `timeoutMs`. A tab
+ * that is already in that state answers immediately, so the caller does not
+ * have to race the event it is about to cause.
+ */
+function waitForStatus(tabId: number, status: `${chrome.tabs.TabStatus}`, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => finish(false), timeoutMs)
+    function finish(value: boolean): void {
+      clearTimeout(timer)
+      chrome.tabs.onUpdated.removeListener(onUpdate)
+      resolve(value)
+    }
+    function onUpdate(id: number, changeInfo: chrome.tabs.OnUpdatedInfo): void {
+      if (id === tabId && changeInfo.status === status) finish(true)
+    }
+    chrome.tabs.onUpdated.addListener(onUpdate)
+    void chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.status === status) finish(true)
+      })
+      .catch(() => undefined)
+  })
+}
+
+/**
+ * Run `start` and wait for the load it causes. Polling tab.status alone is not
+ * enough: Chrome has not marked the tab loading yet when the call returns, so
+ * the old page still reads "complete" and the agent describes the page it left
+ * as the one it arrived at. Seeing the loading transition first is what makes
+ * the wait mean the new document.
+ */
+async function startAndWait(tabId: number, start: () => Promise<unknown>, timeoutMs = 15_000): Promise<void> {
+  const pending = waitForStatus(tabId, 'loading', 1_000)
+  await start()
+  // A same-document navigation (a fragment link, history.replaceState) never
+  // goes through "loading" and is already where the agent wanted to be.
+  await pending
+  await waitForTabComplete(tabId, timeoutMs)
+}
+
+/**
  * A download id until Chrome says it finished, gave up, or went quiet.
  * Resolving with the item is the only way the tool can tell the user where the
  * file actually landed.
@@ -55,7 +97,8 @@ function waitForDownload(id: number, timeoutMs = 30_000): Promise<chrome.downloa
   })
 }
 
-async function runAct(tabId: number, action: ActRequest): Promise<ActResult> {  const result = (await sendToTab(tabId, { kind: 'act', action })) as ActResult
+async function runAct(tabId: number, action: ActRequest): Promise<ActResult> {
+  const result = (await sendToTab(tabId, { kind: 'act', action })) as ActResult
   if (result.ok && result.fellBack && action.type === 'type') {
     // Contenteditable / rich-text fields: the element is already focused,
     // so trusted key events land in it directly. The control behind the action
@@ -93,8 +136,7 @@ export function createToolHost(): ToolHost {
     },
 
     async navigate(tabId, url) {
-      await chrome.tabs.update(tabId, { url })
-      await waitForTabComplete(tabId)
+      await startAndWait(tabId, () => chrome.tabs.update(tabId, { url }))
     },
 
     async openTab(url) {
@@ -104,18 +146,15 @@ export function createToolHost(): ToolHost {
     },
 
     async goBack(tabId) {
-      await chrome.tabs.goBack(tabId)
-      await waitForTabComplete(tabId)
+      await startAndWait(tabId, () => chrome.tabs.goBack(tabId))
     },
 
     async goForward(tabId) {
-      await chrome.tabs.goForward(tabId)
-      await waitForTabComplete(tabId)
+      await startAndWait(tabId, () => chrome.tabs.goForward(tabId))
     },
 
     async reload(tabId) {
-      await chrome.tabs.reload(tabId)
-      await waitForTabComplete(tabId)
+      await startAndWait(tabId, () => chrome.tabs.reload(tabId))
     },
 
     async waitFor(tabId, condition, value, timeoutMs) {
