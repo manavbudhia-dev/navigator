@@ -1,3 +1,4 @@
+import type { RiskElement } from '@/safety/risk'
 import type { ElementRole } from '@/types/pageState'
 
 /**
@@ -60,4 +61,19 @@ export function findElementInfo(lines: string[], index: number): ElementLineInfo
     if (info && info.index === index) return info
   }
   return null
+}
+
+/**
+ * Everything a risk pattern could be written against: a "Pay now" control
+ * often says it in `aria-label` or `name` rather than in its text node.
+ */
+export function riskTextOf(info: ElementLineInfo): string {
+  return [info.text, info.attributes['aria-label'], info.attributes['placeholder'], info.attributes['name'], info.attributes['title']]
+    .filter((part) => part !== undefined && part !== '')
+    .join(' ')
+}
+
+/** The shape the risk scorer takes, assembled from one spec line. */
+export function riskElementOf(info: ElementLineInfo): RiskElement {
+  return { role: info.role, tag: info.tag, inputType: info.inputType, text: riskTextOf(info) }
 }

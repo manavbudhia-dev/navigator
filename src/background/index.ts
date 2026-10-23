@@ -12,7 +12,7 @@ import { handleVaultRequest } from './vaultApi'
 import { researchFollowup, startResearch, stopResearch } from './research'
 import { restoreSchedules, scheduleRecipe, startRecipeRun, unscheduleRecipe } from './recipeRun'
 import { runTabCommand, runTabIntent, startTabWatchers } from './tabApi'
-import { resolveApproval, resolveQuestion, stopRun } from './runControl'
+import { resolveApproval, resolveQuestion, runStatus, stopRun } from './runControl'
 import { startTask } from './task'
 
 /**
@@ -119,6 +119,10 @@ function handleControlMessage(message: BackgroundMessage): BackgroundResponse | 
   switch (message.kind) {
     case 'stop-task':
       return control(stopRun)
+    case 'task-status':
+      // Answered from memory, so a panel that opens mid-run gets the timeline
+      // and the pending card rather than an idle UI over a working agent.
+      return { ok: true, ...runStatus() }
     case 'approve-action':
       return control(() => resolveApproval(message.id, message.approved))
     case 'answer-question':

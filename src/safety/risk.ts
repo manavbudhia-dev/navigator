@@ -23,13 +23,16 @@ export interface RiskInput {
   /** 'read' | 'write' | 'control' */
   kind: string
   url?: string
-  element?: {
-    role?: ElementRole
-    tag?: string
-    inputType?: string | null
-    /** Visible text, aria-label, placeholder, name, id. */
-    text?: string
-  } | null
+  element?: RiskElement | null
+}
+
+/** What a risk score knows about the control an action points at. */
+export interface RiskElement {
+  role?: ElementRole
+  tag?: string
+  inputType?: string | null
+  /** Visible text, aria-label, placeholder, name, id. */
+  text?: string
 }
 
 export interface RiskAssessment {
@@ -101,9 +104,19 @@ function escalate(level: RiskLevel, to: RiskLevel): RiskLevel {
   return order[Math.max(order.indexOf(level), order.indexOf(to))]!
 }
 
+/**
+ * The patterns below are written in words, but a page labels its controls in
+ * identifiers: `otp_code`, `cardNumber`, `confirm_purchase`. Without this, the
+ * `\b` in every pattern fails on the underscore or the case flip and the hard
+ * block silently never fires.
+ */
+function wordsOf(value: string): string {
+  return value.replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+}
+
 function haystack(input: RiskInput): string {
   const el = input.element
-  return [input.url ?? '', el?.text ?? '', el?.inputType ?? ''].join(' ')
+  return wordsOf([input.url ?? '', el?.text ?? '', el?.inputType ?? ''].join(' '))
 }
 
 export function assessRisk(input: RiskInput): RiskAssessment {
@@ -112,7 +125,7 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   let hardBlock: HardBlockKind | null = null
 
   const el = input.element
-  const text = el?.text ?? ''
+  const text = wordsOf(el?.text ?? '')
   const inputType = el?.inputType?.toLowerCase()
 
   if (inputType === 'password') {

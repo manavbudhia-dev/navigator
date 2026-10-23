@@ -143,4 +143,21 @@ describe('assessRisk', () => {
     const a = assessRisk({ tool: 'mystery', kind: 'write' })
     expect(a.level).toBe('medium')
   })
+
+  it('hard-blocks controls labelled with identifiers rather than words', () => {
+    // Real forms name their fields `otp_code`, `cardNumber`, `confirm_delete`.
+    // A `\b` in a pattern does not break on an underscore or a capital, so the
+    // text is split into words before matching.
+    expect(assessRisk({ tool: 'type_text', kind: 'write', element: { inputType: 'text', text: 'otp_code' } }).hardBlock).toBe('otp')
+    expect(assessRisk({ tool: 'click', kind: 'write', element: { role: 'button', text: 'cardNumber' } }).hardBlock).toBe('payment')
+    expect(assessRisk({ tool: 'click', kind: 'write', element: { role: 'button', text: 'confirm_delete' } }).hardBlock).toBe('delete-or-confirm')
+    expect(assessRisk({ tool: 'click', kind: 'write', element: { role: 'checkbox', text: 'i_agree_to_terms' } }).hardBlock).toBe('legal-consent')
+    expect(assessRisk({ tool: 'type_text', kind: 'write', element: { inputType: 'password', text: 'new_password' } }).hardBlock).toBe('password-create')
+  })
+
+  it('does not turn an unrelated identifier into a hard block', () => {
+    const a = assessRisk({ tool: 'click', kind: 'write', element: { role: 'link', text: 'read_more' } })
+    expect(a.hardBlock).toBeNull()
+    expect(a.level).toBe('medium')
+  })
 })

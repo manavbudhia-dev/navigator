@@ -101,6 +101,21 @@ describe('replayRecipe', () => {
     expect((s.execute.mock.calls[0] as [RecipeStep, number | null])[1]).toBe(11)
   })
 
+  it('tells the safety gate which index the step resolved to', async () => {
+    // A step recorded against a "City" box can land on a password field today,
+    // so the gate has to score the live index rather than the recording.
+    const seen: (number | null)[] = []
+    const s = spy({
+      findIndex: vi.fn(async () => 7),
+      permit: vi.fn(async (_step: RecipeStep, index: number | null) => {
+        seen.push(index)
+        return true
+      }),
+    })
+    await replayRecipe(recipe([step({ tool: 'click', target: TARGET }), step({ tool: 'wait', args: { seconds: 1 } })]), VALUES, s.deps)
+    expect(seen).toEqual([7, null])
+  })
+
   it('asks the model only about the step whose control disappeared', async () => {
     const s = spy({
       findIndex: vi.fn(async (target: ElementTarget) => (target.label === 'Apply now' ? null : 4)),

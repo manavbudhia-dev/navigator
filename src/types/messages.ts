@@ -11,6 +11,7 @@ import type { WaitCondition } from '@/content/waitFor'
 import type { ArticlePayload, ResearchDepth } from '@/research/types'
 import type { TabIntent, TabReport } from '@/tabs/types'
 import type { PageState } from './pageState'
+import type { TaskEvent } from './task'
 import type { VaultReply, VaultRequest } from './vault'
 
 export type PageMeta = {
@@ -29,6 +30,7 @@ export type BackgroundMessage =
   | { kind: 'act-active-tab'; action: ActRequest }
   | { kind: 'run-task'; goal: string; mode: AgentMode }
   | { kind: 'stop-task' }
+  | { kind: 'task-status' }
   | { kind: 'approve-action'; id: string; approved: boolean }
   | { kind: 'answer-question'; id: string; answer: string }
   | { kind: 'set-overlay'; visible?: boolean; highlightIndex?: number; review?: number[] }
@@ -51,6 +53,8 @@ export type BackgroundResponse =
   | { ok: true; answer: string }
   | { ok: true; report: TabReport }
   | { ok: true; accepted: boolean; error?: string }
+  /** Lets a panel that opens onto a live run rebuild its timeline and cards. */
+  | { ok: true; running: boolean; label: string; events: TaskEvent[] }
   | { ok: false; error: string }
   | ActResult
 
@@ -83,6 +87,7 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
       value.kind === 'act-active-tab' ||
       value.kind === 'run-task' ||
       value.kind === 'stop-task' ||
+      value.kind === 'task-status' ||
       value.kind === 'approve-action' ||
       value.kind === 'answer-question' ||
       value.kind === 'set-overlay' ||

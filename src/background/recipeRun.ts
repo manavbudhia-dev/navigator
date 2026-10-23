@@ -1,4 +1,5 @@
 import { runAgentTask } from '@/agent/loop'
+import { findElementInfo, riskElementOf } from '@/agent/elementLines'
 import { complete } from '@/llm'
 import { loadModelConfig } from '@/llm/config'
 import { healGoal } from '@/prompts/recipes'
@@ -14,7 +15,7 @@ import { tabTools } from '@/tools/tabTools'
 import { ToolRegistry } from '@/tools/registry'
 import type { AgentMode } from '@/types/agent'
 import type { Recipe, RecipeStep } from '@/recipes/types'
-import type { RiskAssessment } from '@/safety/risk'
+import type { RiskAssessment, RiskElement } from '@/safety/risk'
 import type { ToolContext, ToolKind } from '@/tools/types'
 
 import { createToolHost, waitForTabComplete } from './host'
@@ -71,18 +72,34 @@ async function activeTabId(): Promise<number> {
   return tab.id
 }
 
-function riskFor(step: RecipeStep, registry: ToolRegistry): { kind: ToolKind; assessment: RiskAssessment } {
+function recordedElement(step: RecipeStep): RiskElement | null {
+  return step.target === null
+    ? null
+    : {
+        role: step.target.role,
+        tag: step.target.selector.tag,
+        inputType: step.target.inputType,
+        text: step.target.label,
+      }
+}
+
+function riskFor(
+  step: RecipeStep,
+  registry: ToolRegistry,
+  index: number | null,
+  liveLines: string[],
+  url: string | null,
+): { kind: ToolKind; assessment: RiskAssessment } {
   const kind = registry.get(step.tool)?.kind ?? 'write'
-  const element =
-    step.target === null
-      ? null
-      : {
-          role: step.target.role,
-          tag: step.target.selector.tag,
-          inputType: step.target.inputType,
-          text: step.target.label,
-        }
-  return { kind, assessment: assessRisk({ tool: step.tool, kind, element }) }
+  // Score what is on the page now. The recording is only a fallback for steps
+  // that point at nothing, because a field that was `type="email"` when it was
+  // recorded can be a password field today.
+  const line = index === null ? null : findElementInfo(liveLines, index)
+  const element = line === null ? recordedElement(step) : riskElementOf(line)
+  return {
+    kind,
+    assessment: assessRisk({ tool: step.tool, kind, element, ...(url === null ? {} : { url }) }),
+  }
 }
 
 export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRunOutcome> {
@@ -94,7 +111,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
   const registry = new ToolRegistry([...coreTools(), ...tabTools(), ...dataTools()])
   const run = beginRun(`recipe "${recipe.name}"`)
   const { signal } = run.kill
-  const hooks = hooksFor((event) => broadcast(event))
+  const hooks = hooksFor((event) => broadcast(event), run)
 
   let detachedWindow: number | null = null
   let tabId: number
@@ -111,7 +128,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
       tabId = await activeTabId()
     }
   } catch (error) {
-    endRun()
+    endRun(run)
     throw error
   }
 
@@ -120,6 +137,8 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
   const runId = crypto.randomUUID()
   const auditGoal = `Recipe: ${recipe.name}`
   let pageUrl: string | null = null
+  /** The live spec lines, refreshed before every step. */
+  let liveLines: string[] = []
 
   const audit = async (
     step: RecipeStep,
@@ -169,13 +188,13 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
     if (index !== null) args['index'] = index
     const startedAt = Date.now()
     const result = await registry.execute(step.tool, args, ctx)
-    const { assessment } = riskFor(step, registry)
+    const { assessment } = riskFor(step, registry, index, liveLines, pageUrl)
     await audit(step, args, assessment, 'allow', result.ok, result.content.slice(0, 500), Date.now() - startedAt)
     return { ok: result.ok, content: result.content }
   }
 
-  const permit = async (step: RecipeStep): Promise<boolean> => {
-    const { kind, assessment } = riskFor(step, registry)
+  const permit = async (step: RecipeStep, index: number | null): Promise<boolean> => {
+    const { kind, assessment } = riskFor(step, registry, index, liveLines, pageUrl)
     const decision = decide(options.mode, kind, assessment)
     if (decision === 'allow') return true
 
@@ -239,7 +258,9 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
   try {
     const result = await replayRecipe(recipe, options.values, {
       refresh: async () => {
-        pageUrl = (await host.pageState(tabId)).url
+        const state = await host.pageState(tabId)
+        pageUrl = state.url
+        liveLines = state.elementLines
       },
       findIndex: (target) => host.locate(tabId, target),
       execute,
@@ -249,11 +270,20 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
     })
 
     const at = Date.now()
-    await saveRecipe({ ...recipe, updatedAt: at, lastRun: { at, ok: result.ok, detail: result.detail, healed: result.healed } })
+    // Re-read before writing: a replay runs for minutes, and a schedule the
+    // user added during it must not be erased by the copy taken at the start.
+    const current = await getRecipe(recipe.id)
+    if (current !== null) {
+      await saveRecipe({
+        ...current,
+        updatedAt: at,
+        lastRun: { at, ok: result.ok, detail: result.detail, healed: result.healed },
+      })
+    }
     broadcast({ type: 'recipe', id: recipe.id, name: recipe.name, ok: result.ok, detail: result.detail, healed: result.healed })
     return { ok: result.ok, detail: result.detail, healed: result.healed }
   } finally {
-    endRun()
+    endRun(run)
     chrome.alarms.clear(KEEPALIVE_ALARM)
     if (detachedWindow !== null) await chrome.windows.remove(detachedWindow).catch(() => undefined)
   }
@@ -311,14 +341,21 @@ export async function unscheduleRecipe(id: string): Promise<void> {
 
 /** Runs on its own: today's values are the ones the run was recorded with. */
 async function runScheduled(id: string): Promise<void> {
-  const recipe = await getRecipe(id)
-  if (recipe === null) {
-    chrome.alarms.clear(alarmName(id))
-    return
+  try {
+    const recipe = await getRecipe(id)
+    if (recipe === null) {
+      chrome.alarms.clear(alarmName(id))
+      return
+    }
+    const values: Record<string, string> = {}
+    for (const param of recipe.params) values[param.name] = param.sample
+    await startRecipeRun({ id, values, mode: 'auto', interactive: false, detached: true })
+  } catch (error) {
+    // Nothing awaits an alarm callback, so a rejection here would disappear and
+    // the only symptom would be a workflow that quietly stopped happening.
+    const message = error instanceof Error ? error.message : String(error)
+    broadcast({ type: 'failed', error: `The scheduled recipe "${id}" could not run: ${message}` })
   }
-  const values: Record<string, string> = {}
-  for (const param of recipe.params) values[param.name] = param.sample
-  await startRecipeRun({ id, values, mode: 'auto', interactive: false, detached: true })
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {

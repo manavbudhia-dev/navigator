@@ -12,7 +12,8 @@ import { createAuditProbe } from './auditApi'
 import { createTabOps } from './tabApi'
 import { memoryApi } from './memoryApi'
 import { createToolHost } from './host'
-import { beginRun, endRun, hooksFor, isRunActive, resolveApproval, resolveQuestion, stopRun } from './runControl'
+import { beginRun, endRun, hooksFor, isRunActive, recordEvent, resolveApproval, resolveQuestion, stopRun } from './runControl'
+import type { ActiveRun } from './runControl'
 import { vault } from './vaultApi'
 
 /**
@@ -24,8 +25,11 @@ import { vault } from './vaultApi'
 const KEEPALIVE_ALARM = 'navigator-keepalive'
 
 export function broadcast(event: TaskEvent): void {
+  // Kept even when nobody is listening: a panel that opens mid-run replays
+  // this log (see `runStatus`) instead of starting from an empty timeline.
+  recordEvent(event)
   void chrome.runtime.sendMessage({ source: 'navigator-task', event }).catch(() => {
-    // Side panel closed — the loop keeps running; events are lost by design.
+    // Side panel closed — the loop keeps running; events reach the next panel.
   })
 }
 
@@ -60,11 +64,24 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
   try {
     config = await loadModelConfig()
     tabId = await getActiveTabId()
-    const run = beginRun('task')
-    chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 })
-    const hooks = hooksFor((event) => emitAndHighlight(tabId, event))
-    const runId = crypto.randomUUID()
+  } catch (error) {
+    // Nothing was started, so nothing here may touch the run that does own
+    // the slot: failing before `beginRun` is the common case (no active tab).
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 
+  let run: ActiveRun
+  try {
+    run = beginRun('task')
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.4 })
+  const hooks = hooksFor((event) => emitAndHighlight(tabId, event), run)
+  const runId = crypto.randomUUID()
+
+  try {
     void runAgentTask({
       goal,
       mode,
@@ -96,16 +113,17 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
         broadcast({ type: 'failed', error: message })
       })
       .finally(() => {
-        endRun()
+        endRun(run)
         chrome.alarms.clear(KEEPALIVE_ALARM)
       })
-
-    return { ok: true }
   } catch (error) {
-    endRun()
+    // A host that could not even be built: release our own run, never another's.
+    endRun(run)
     chrome.alarms.clear(KEEPALIVE_ALARM)
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
+
+  return { ok: true }
 }
 
 /** The MV3 service worker dies when idle; an active alarm resets the timer. */

@@ -32,48 +32,85 @@ async function send(message: BackgroundMessage): Promise<BackgroundResponse | nu
   }
 }
 
+/** Why an answer did not land, in the user's terms rather than the worker's. */
+function answerFailure(response: BackgroundResponse | null): string | null {
+  if (response === null) return 'The extension did not answer. It may need reloading.'
+  if (!response.ok) return response.error
+  if ('accepted' in response && !response.accepted) return response.error ?? 'The worker no longer has that prompt.'
+  return null
+}
+
 export function useTaskBridge() {
   const [running, setRunning] = useState(false)
   const [events, setEvents] = useState<TaskEvent[]>([])
   const [approval, setApproval] = useState<PendingApproval | null>(null)
   const [question, setQuestion] = useState<PendingQuestion | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
+  const [answerError, setAnswerError] = useState<string | null>(null)
+
+  const applyEvent = useCallback((event: TaskEvent): void => {
+    setEvents((prev) => [...prev.slice(-199), event])
+    if (event.type === 'approval') {
+      setAnswerError(null)
+      setApproval({
+        id: event.id,
+        tool: event.tool,
+        summary: event.summary ?? '',
+        level: event.level,
+        reasons: event.reasons,
+        hardBlock: event.hardBlock,
+      })
+    } else if (event.type === 'approval-resolved') {
+      setApproval((prev) => (prev?.id === event.id ? null : prev))
+    } else if (event.type === 'question') {
+      setAnswerError(null)
+      setQuestion({ id: event.id, question: event.question })
+    } else if (event.type === 'question-resolved') {
+      setQuestion((prev) => (prev?.id === event.id ? null : prev))
+    } else if (event.type === 'done' || event.type === 'failed') {
+      setRunning(false)
+      setApproval(null)
+      setQuestion(null)
+    }
+  }, [])
 
   useEffect(() => {
     if (!inExtension) return
     const listener = (message: unknown): undefined => {
       if (!isTaskEventMessage(message)) return undefined
-      const event = message.event
-      setEvents((prev) => [...prev.slice(-199), event])
-      if (event.type === 'approval') {
-        setApproval({
-          id: event.id,
-          tool: event.tool,
-          summary: event.summary ?? '',
-          level: event.level,
-          reasons: event.reasons,
-          hardBlock: event.hardBlock,
-        })
-      } else if (event.type === 'approval-resolved') {
-        setApproval((prev) => (prev?.id === event.id ? null : prev))
-      } else if (event.type === 'question') {
-        setQuestion({ id: event.id, question: event.question })
-      } else if (event.type === 'question-resolved') {
-        setQuestion((prev) => (prev?.id === event.id ? null : prev))
-      } else if (event.type === 'done' || event.type === 'failed') {
-        setRunning(false)
-        setApproval(null)
-        setQuestion(null)
-      }
+      applyEvent(message.event)
       return undefined
     }
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
-  }, [])
+  }, [applyEvent])
+
+  /**
+   * The panel is a document that comes and goes; the run does not. Without this
+   * a panel reopened over a live task shows an idle UI: no timeline, no Stop
+   * button, and an approval raised while it was shut never reaches the screen,
+   * so the agent waits for an answer nobody can see.
+   */
+  useEffect(() => {
+    if (!inExtension) return
+    let cancelled = false
+    void send({ kind: 'task-status' }).then((response) => {
+      if (cancelled || response === null || !('running' in response)) return
+      setEvents([])
+      setApproval(null)
+      setQuestion(null)
+      for (const event of response.events) applyEvent(event)
+      setRunning(response.running)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [applyEvent])
 
   const start = useCallback(async (goal: string, mode: AgentMode): Promise<boolean> => {
     setEvents([])
     setStartError(null)
+    setAnswerError(null)
     const response = await send({ kind: 'run-task', goal, mode })
     if (response && response.ok && 'accepted' in response) {
       if (response.accepted) {
@@ -96,14 +133,31 @@ export function useTaskBridge() {
   }, [])
 
   const answerApproval = useCallback(async (id: string, approved: boolean): Promise<void> => {
-    setApproval(null)
-    await send({ kind: 'approve-action', id, approved })
+    const response = await send({ kind: 'approve-action', id, approved })
+    const failure = answerFailure(response)
+    // The card stays on screen when the worker did not take the answer, so the
+    // user can retry instead of watching a prompt that never arrives.
+    if (failure === null) setApproval(null)
+    setAnswerError(failure)
   }, [])
 
   const answerQuestion = useCallback(async (id: string, text: string): Promise<void> => {
-    setQuestion(null)
-    await send({ kind: 'answer-question', id, answer: text })
+    const response = await send({ kind: 'answer-question', id, answer: text })
+    const failure = answerFailure(response)
+    if (failure === null) setQuestion(null)
+    setAnswerError(failure)
   }, [])
 
-  return { running, events, approval, question, startError, start, stop, answerApproval, answerQuestion }
+  return {
+    running,
+    events,
+    approval,
+    question,
+    startError,
+    answerError,
+    start,
+    stop,
+    answerApproval,
+    answerQuestion,
+  }
 }

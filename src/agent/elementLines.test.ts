@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { findElementInfo, parseElementLine } from './elementLines'
+import { assessRisk } from '@/safety/risk'
+
+import { findElementInfo, parseElementLine, riskElementOf, riskTextOf } from './elementLines'
 
 describe('parseElementLine', () => {
   it('parses an input line with attributes and empty text', () => {
@@ -47,5 +49,30 @@ describe('findElementInfo', () => {
   it('returns null for unknown indices', () => {
     expect(findElementInfo(lines, 9)).toBeNull()
     expect(findElementInfo([], 0)).toBeNull()
+  })
+})
+
+describe('riskElementOf', () => {
+  it('reads the label out of the attributes, not only the text node', () => {
+    const info = parseElementLine('[4]<button aria-label="Pay now" class="cta"></button>')!
+    expect(riskTextOf(info)).toBe('Pay now')
+    expect(riskElementOf(info)).toEqual({ role: 'button', tag: 'button', inputType: null, text: 'Pay now' })
+  })
+
+  it('puts the visible text first and joins the labelling attributes', () => {
+    const info = parseElementLine('[1]<input name="card_cvc" placeholder="123">CVC</input>')!
+    expect(riskTextOf(info)).toBe('CVC 123 card_cvc')
+  })
+
+  it('hands the risk scorer what it needs to hard-block an invisible payment button', () => {
+    const info = findElementInfo(['[7]<button aria-label="Place order"></button>'], 7)!
+    const assessment = assessRisk({ tool: 'click', kind: 'write', element: riskElementOf(info) })
+    expect(assessment.hardBlock).toBe('payment')
+  })
+
+  it('still catches an OTP field that only says it in the field name', () => {
+    const info = findElementInfo(['[2]<input name="otp_code"></input>'], 2)!
+    const assessment = assessRisk({ tool: 'type_text', kind: 'write', element: riskElementOf(info) })
+    expect(assessment.hardBlock).toBe('otp')
   })
 })

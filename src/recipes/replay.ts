@@ -38,7 +38,7 @@ export interface ReplayDeps {
   /** Run the recorded tool. `index` is null for steps that point at nothing. */
   execute(step: RecipeStep, index: number | null): Promise<{ ok: boolean; content: string }>
   /** Risk gate: false means the user said no, or the mode forbids it. */
-  permit(step: RecipeStep): Promise<boolean>
+  permit(step: RecipeStep, index: number | null): Promise<boolean>
   /** Ask the model to achieve just this step on the current page. */
   heal(step: RecipeStep, values: Readonly<Record<string, string>>, n: number): Promise<string | null>
   signal?: AbortSignal
@@ -97,7 +97,9 @@ export async function replayRecipe(
       continue
     }
 
-    if (!(await deps.permit(step))) {
+    // The gate sees the resolved index too: the live control is what the risk
+    // belongs to, not the one that happened to be there when this was recorded.
+    if (!(await deps.permit(step, index))) {
       stopped = `You declined step ${n + 1} (${step.tool}), so the recipe stopped there.`
       steps.push({ n: n + 1, tool: step.tool, note: step.note, mode: 'denied', detail: 'Declined.' })
       break

@@ -372,6 +372,12 @@ export function AgentPanel({
             </div>
           ) : null}
 
+          {task.answerError ? (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">
+              {task.answerError}
+            </p>
+          ) : null}
+
           <div className="rounded-xl border bg-card p-3">
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-sm font-semibold">Live task</h3>
