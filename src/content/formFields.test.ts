@@ -38,6 +38,24 @@ describe('readFormFields', () => {
     expect(field?.index).toBeGreaterThanOrEqual(0)
   })
 
+  it('does not harvest what the person already typed into a secret field', () => {
+    document.body.innerHTML = `
+      <form>
+        <label for="pw">Password</label>
+        <input id="pw" name="password" type="password" value="hunter2" />
+        <label for="nick">Nickname</label>
+        <input id="nick" name="nickname" value="manav" />
+      </form>`
+    mockAllRects()
+
+    const fields = read()
+    const password = fields.find((field) => field.inputType === 'password')
+    expect(password?.value).toBe('')
+    // The classifier still has to see that it is a password box to block it.
+    expect(password?.name).toBe('password')
+    expect(fields.find((field) => field.name === 'nickname')?.value).toBe('manav')
+  })
+
   it('reads a wrapping label and aria-labelledby', () => {
     document.body.innerHTML = `
       <label>First name <input name="first" /></label>

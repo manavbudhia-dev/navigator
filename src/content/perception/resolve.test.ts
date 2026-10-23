@@ -4,8 +4,26 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { collectInteractiveElements } from './indexer'
 import { resolveSelector } from './resolve'
 import { mockRects, rect, type FakeRect } from './testUtils'
+import type { ElementSelector } from '@/types/pageState'
 
 const VIEWPORT = { width: 1024, height: 768 }
+
+/**
+ * A selector whose precise strategies point at nothing, so the test exercises
+ * the forgiving ones — which is where a wrong-element guess can happen.
+ */
+function selectorAt(overrides: Partial<ElementSelector>): ElementSelector {
+  return {
+    css: '#nothing-with-this-id',
+    xpath: '/html/body/no-such-tag',
+    textAnchor: 'Continue',
+    bbox: rect(20, 40),
+    tag: 'button',
+    role: 'button',
+    frameUrl: null,
+    ...overrides,
+  }
+}
 
 function snapshot() {
   return collectInteractiveElements(document, {
@@ -106,5 +124,51 @@ describe('resolveSelector', () => {
     mockRects(new Map())
 
     expect(resolveSelector(document, selector)).toBeNull()
+  })
+
+  it('will not take a same-labelled control that is nowhere near the recorded spot', () => {
+    // A "Continue" link in the footer is not the "Continue" button at the top
+    // of a five-thousand-pixel page.
+    const near = document.createElement('button')
+    near.textContent = 'Continue'
+    const far = document.createElement('button')
+    far.textContent = 'Continue'
+    document.body.append(near, far)
+    mockRects(new Map<Element, FakeRect>([[near, rect(20, 40)], [far, rect(20, 5200)]]))
+
+    expect(resolveSelector(document, selectorAt({ textAnchor: 'Continue', bbox: rect(20, 40) }))?.element).toBe(near)
+
+    near.remove()
+    expect(resolveSelector(document, selectorAt({ textAnchor: 'Continue', bbox: rect(20, 40) }))).toBeNull()
+  })
+
+  it('resolves a frame control in its own document, not the page that hosts it', () => {
+    document.body.innerHTML = '<button id="top">Continue</button><iframe id="f1"></iframe>'
+    const topButton = document.getElementById('top')!
+    const frame = document.getElementById('f1') as HTMLIFrameElement
+    const inner = frame.contentDocument!
+    inner.body.innerHTML = '<button id="inside">Continue</button>'
+    mockRects(
+      new Map<Element, FakeRect>([
+        [topButton, rect(20, 40)],
+        [inner.getElementById('inside')!, rect(20, 40)],
+      ]),
+      [window, inner.defaultView as Window & typeof globalThis],
+    )
+
+    const selector = selectorAt({ textAnchor: 'Continue', bbox: rect(20, 40), frameUrl: inner.location.href })
+    const result = resolveSelector(document, selector)
+    expect(result?.element.id).toBe('inside')
+  })
+
+  it('refuses a frame that is gone, and a page with two frames on the same url', () => {
+    document.body.innerHTML = '<button id="top">Continue</button><iframe id="f1"></iframe><iframe id="f2"></iframe>'
+    const topButton = document.getElementById('top')!
+    mockRects(new Map<Element, FakeRect>([[topButton, rect(20, 40)]]))
+
+    const selector = selectorAt({ textAnchor: 'Continue', bbox: rect(20, 40) })
+    // Both iframes are about:blank, so nothing says which one held the control.
+    expect(resolveSelector(document, { ...selector, frameUrl: 'about:blank' })).toBeNull()
+    expect(resolveSelector(document, { ...selector, frameUrl: 'https://gone.test/embed' })).toBeNull()
   })
 })

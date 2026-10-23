@@ -1,4 +1,6 @@
 import { extractMarkdown } from './perception/extract'
+
+import { isSafeHref } from '@/lib/linkScheme'
 import type { ArticlePayload } from '@/research/types'
 
 /**
@@ -125,6 +127,9 @@ export function collectLinks(doc: Document): ArticlePayload['links'] {
     } catch {
       continue
     }
+    // `anchor.href` is resolved, not sanitised: a page can still point it at
+    // javascript:, data: or file:, and the research tab renders these as links.
+    if (!isSafeHref(url, doc.baseURI)) continue
     out.push({ url, title, snippet: snippetFor(anchor) })
     if (out.length >= 120) break
   }

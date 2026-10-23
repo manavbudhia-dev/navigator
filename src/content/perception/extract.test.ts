@@ -55,4 +55,24 @@ describe('extractMarkdown', () => {
     const markdown = extractMarkdown(document)
     expect(markdown).toBe('Same line')
   })
+
+  it('keeps the words of a link whose target would run code', () => {
+    document.body.innerHTML = `
+      <main>
+        <p>Read the <a href="javascript:alert(1)">terms</a> or the
+        <a href="data:text/html,payload">summary</a> or the
+        <a href="/pricing">pricing</a>.</p>
+      </main>
+    `
+    const markdown = extractMarkdown(document)
+
+    // The link text is content; the target is an instruction to the reader.
+    expect(markdown).toContain('terms')
+    expect(markdown).toContain('summary')
+    expect(markdown).not.toContain('javascript:')
+    expect(markdown).not.toContain('data:text/html')
+    expect(markdown).not.toContain('[terms]')
+    // A relative link is still a link the page really points at.
+    expect(markdown).toContain('[pricing](/pricing)')
+  })
 })

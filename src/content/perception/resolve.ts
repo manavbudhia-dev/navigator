@@ -59,11 +59,22 @@ function byXPath(doc: Document, selector: ElementSelector): Element | null {
   }
 }
 
+/**
+ * How far a forgiving strategy may reach. A cookie banner or an expanding
+ * section shifts a control by tens of pixels; a footer link that happens to
+ * carry the same label as the button above it is hundreds away, and clicking
+ * it would be a different action than the one that was scored.
+ */
+const ANCHOR_RADIUS_PX = 240
+
 function byTextAnchor(doc: Document, selector: ElementSelector): Element | null {
-  const pool = Array.from(doc.querySelectorAll(selector.tag)).filter((el) => matchesAnchor(el, selector))
+  const pool = Array.from(doc.querySelectorAll(selector.tag))
+    .filter((el) => matchesAnchor(el, selector))
+    .map((el) => ({ el, at: distance(rectOf(el), selector.bbox) }))
+    .filter((candidate) => candidate.at < ANCHOR_RADIUS_PX)
   if (pool.length === 0) return null
-  pool.sort((a, b) => distance(rectOf(a), selector.bbox) - distance(rectOf(b), selector.bbox))
-  return pool[0]!
+  pool.sort((a, b) => a.at - b.at)
+  return pool[0]!.el
 }
 
 function byBBox(doc: Document, selector: ElementSelector): Element | null {
@@ -81,10 +92,43 @@ function byBBox(doc: Document, selector: ElementSelector): Element | null {
 }
 
 /**
+ * The document the remembered control was collected from. The indexer walks
+ * same-origin frames from the top document and numbers everything in one
+ * sequence, so a selector recorded inside a frame has to be resolved there —
+ * the same css path or xpath often exists in the parent page too, and clicking
+ * that would be a different control wearing the same address.
+ */
+function owningDocument(top: Document, frameUrl: string | null): Document | null {
+  if (frameUrl === null) return top
+  const matches: Document[] = []
+  const visit = (doc: Document): void => {
+    for (const node of Array.from(doc.querySelectorAll('iframe, frame'))) {
+      let inner: Document | null = null
+      try {
+        inner = (node as HTMLIFrameElement).contentDocument
+      } catch {
+        inner = null
+      }
+      if (inner === null) continue
+      if (inner.location?.href === frameUrl) matches.push(inner)
+      if (matches.length > 1) return
+      visit(inner)
+    }
+  }
+  visit(top)
+  // Two frames on the same page with the same URL: nothing identifies the one
+  // the control came from, so the step is refused rather than guessed at.
+  return matches.length === 1 ? (matches[0] ?? null) : null
+}
+
+/**
  * Re-resolves a remembered selector against a possibly-mutated DOM, trying
  * strategies from cheapest/most precise to most forgiving (spec §3a).
  */
-export function resolveSelector(doc: Document, selector: ElementSelector): ResolveResult | null {
+export function resolveSelector(top: Document, selector: ElementSelector): ResolveResult | null {
+  const doc = owningDocument(top, selector.frameUrl)
+  if (doc === null) return null
+
   const strategies: Array<[ResolveStrategy, (d: Document, s: ElementSelector) => Element | null]> = [
     ['css', byCss],
     ['xpath', byXPath],

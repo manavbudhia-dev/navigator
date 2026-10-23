@@ -84,7 +84,14 @@ function nearbyFor(el: Element): string {
 }
 
 function valueOf(el: Element): string {
-  if (el instanceof HTMLInputElement) return el.type === 'checkbox' || el.type === 'radio' ? String(el.checked) : el.value
+  if (el instanceof HTMLInputElement) {
+    if (el.type === 'checkbox' || el.type === 'radio') return String(el.checked)
+    // Whatever the person already typed in a secret box stays out of the field
+    // list, which is sent to the model and written to the plan. The mapper can
+    // still see `inputType: password` and leave the field alone.
+    if (el.type === 'password') return ''
+    return el.value
+  }
   if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return el.value
   return ''
 }

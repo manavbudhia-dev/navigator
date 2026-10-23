@@ -4,6 +4,8 @@
  * paragraph text vs link text, then walk once emitting Markdown.
  */
 
+import { isSafeHref } from '@/lib/linkScheme'
+
 const SKIP_TAGS = new Set([
   'script',
   'style',
@@ -81,7 +83,7 @@ function inlineMarkdown(el: Element, doc: Document): string {
     if (tag === 'a' && child.hasAttribute('href')) {
       const label = inlineMarkdown(child, doc).trim()
       const href = child.getAttribute('href') ?? ''
-      if (label !== '' && !href.startsWith('javascript:')) {
+      if (label !== '' && isSafeHref(href, doc.baseURI)) {
         out += `[${label}](${href})`
       } else {
         out += label
