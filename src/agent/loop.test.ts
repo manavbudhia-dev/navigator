@@ -265,6 +265,31 @@ describe('runAgentTask', () => {
     expect(acts).toEqual([])
   })
 
+  it('refuses an element index the model never read on this page', async () => {
+    const { promise, acts, events, fn } = run(
+      [toolCall('click', { index: 1 }), toolCall('finish', { success: true, summary: 'gave up' })],
+      'auto',
+    )
+    await promise
+    expect(acts).toEqual([])
+    expect(events.some((event) => event.type === 'blocked')).toBe(true)
+    expect(toolMessages(fn).some((content) => content.includes('Call read_page'))).toBe(true)
+  })
+
+  it('drops the element map when an action navigates away', async () => {
+    const { promise, acts } = run(
+      [
+        toolCall('read_page', {}),
+        toolCall('navigate', { url: 'https://shop.test/other' }),
+        toolCall('click', { index: 1 }),
+        toolCall('finish', { success: true, summary: 'done' }),
+      ],
+      'auto',
+    )
+    await promise
+    expect(acts).toEqual([])
+  })
+
   it('says what a new verb is about to do in the approval card', async () => {
     const { promise, events } = run(
       [

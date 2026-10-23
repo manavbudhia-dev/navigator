@@ -7,7 +7,7 @@ import { decide } from '@/safety/modePolicy'
 
 import { ActionQueue } from './queue'
 import { compactHistory, estimateMessagesTokens } from './compact'
-import { findElementInfo } from './elementLines'
+import { findElementInfo, riskElementOf } from './elementLines'
 
 import type { ModelConfig } from '@/llm/config'
 import type { ChatMessage, CompletionRequest, CompletionResult, TokenUsage } from '@/llm/types'
@@ -94,6 +94,9 @@ export interface AgentRunOptions {
 }
 
 const ELEMENT_LINE = /^\[\d+\]</
+
+/** Tools that always replace the document, so every index in the old map dies. */
+const NAVIGATION_TOOLS = new Set(['navigate', 'go_back', 'go_forward', 'reload'])
 
 function summarizeArgs(tool: string, args: Record<string, unknown>): string {
   if (tool === 'click') return `click element ${String(args['index'])}`
@@ -205,7 +208,14 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
     },
   ]
 
-  let pageLines: string[] = []
+  /**
+   * The element lines from the last `read_page`, or null when the page has
+   * moved since. An index only means something against the snapshot it came
+   * from, so a stale map refuses the action rather than scoring it against the
+   * label of whatever used to sit there — which is how a consent checkbox gets
+   * ticked under the name of a newsletter toggle.
+   */
+  let pageLines: string[] | null = null
   let promptTokens = 0
   let completionTokens = 0
   let steps = 0
@@ -296,6 +306,13 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
     messages.push(assistant)
 
     for (const call of calls) {
+      // One model turn can ask for several actions. Stop has to land between
+      // them, not only between turns — otherwise the actions the user just
+      // cancelled still run.
+      if (signal.aborted) {
+        queue.cancelPending('Navigator was stopped by the user.')
+        throw new Error('Navigator was stopped by the user.')
+      }
       const spec = registry.get(call.name)
       if (!spec) {
         pushToolResult(call.id, call.name, `Unknown tool "${call.name}". Use one of: ${registry.list().map((s) => s.name).join(', ')}`)
@@ -370,11 +387,23 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
           : typeof args['to_index'] === 'number'
             ? args['to_index']
             : null
-      const element = indexArg === null ? null : findElementInfo(pageLines, indexArg)
+      if (indexArg !== null && pageLines === null) {
+        const reason = 'The page changed since you read it, so that element index is no longer yours to use.'
+        hooks.emit({ type: 'blocked', tool: call.name, reason })
+        pushToolResult(call.id, call.name, `${reason} Call read_page and use the new indices.`)
+        continue
+      }
+      // Read before the action: a click or navigate is about to change it, and
+      // the URL is what the payment and OTP hard blocks match against.
+      // Read before the action: a click or navigate is about to change it, and
+      // the URL is what the payment and OTP hard blocks match against.
+      const where = await evidence()
+      const lineInfo = indexArg === null || pageLines === null ? null : findElementInfo(pageLines, indexArg)
       const assessment = assessRisk({
         tool: call.name,
         kind: spec.kind,
-        element,
+        element: lineInfo === null ? null : riskElementOf(lineInfo),
+        ...(where.url === undefined ? {} : { url: where.url }),
       })
       const decision = decide(mode, spec.kind, assessment)
       const actionSummary = summarizeArgs(call.name, args)
@@ -431,9 +460,8 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       }
 
       // --- execute ---------------------------------------------------------
-      // The url is read before the action because a click or navigate is about
-      // to change it; the picture is taken after, because it shows the result.
-      const where = await evidence()
+      // The url was read before the action (above); the picture is taken after,
+      // because it shows the result.
       const startedAt = Date.now()
       const toolResult = await queue.enqueue(() => registry.execute(call.name, args, ctx))
       const ms = Date.now() - startedAt
@@ -445,6 +473,13 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         if (sanitized.flags.length > 0) {
           hooks.emit({ type: 'note', text: `Prompt-injection patterns redacted from page (${sanitized.flags.length}).` })
         }
+      }
+
+      // Retire the index map when the document went away under it: a navigation
+      // always, and any other write whose click turned out to move the page.
+      if (call.name !== 'read_page' && toolResult.ok && pageLines !== null) {
+        const after = spec.kind === 'read' || where.url === undefined ? null : await bestEffort(readUrl)
+        if (NAVIGATION_TOOLS.has(call.name) || (after !== null && after !== where.url)) pageLines = null
       }
 
       hooks.emit({ type: 'result', tool: call.name, ok: toolResult.ok, content })
