@@ -20,7 +20,7 @@ import {
 import { StatusPill, type ConnectionStatus } from '../components/StatusPill'
 import { CostText } from '../components/CostText'
 import { SaveRecipeButton } from '../components/SaveRecipe'
-import { AllowSiteButton } from '../components/AllowSiteButton'
+import { SiteRuleButton } from '../components/SiteRuleButton'
 import { latestAnnouncement } from '../announce'
 import { formatWhen, loadSessions, type AuditSession } from '@/memory/history'
 import { inExtension } from '@/lib/extension'
@@ -345,12 +345,16 @@ export function AgentPanel({
                   Deny
                 </button>
               </div>
-              {/* The site rule is a separate decision from this step, and a hard
-                  block would still ask after the site is allowed, so it only
-                  appears when the page itself is the reason for the card. */}
-              {task.approval.hardBlock === null && task.approval.host !== '' ? (
-                <div className="mt-2 border-t border-amber-200 pt-2">
-                  <AllowSiteButton host={task.approval.host} />
+              {/* The site rules are separate decisions from this step. Allowing a
+                  site would still ask after a hard block, so that button only
+                  appears when the page itself is the reason for the card;
+                  closing the site entirely answers any card, hard block included. */}
+              {task.approval.host !== '' ? (
+                <div className="mt-2 flex flex-col gap-1.5 border-t border-amber-200 pt-2">
+                  {task.approval.hardBlock === null ? (
+                    <SiteRuleButton list="allow" host={task.approval.host} />
+                  ) : null}
+                  <SiteRuleButton list="block" host={task.approval.host} />
                 </div>
               ) : null}
             </div>

@@ -96,6 +96,14 @@ export function buildCommands(controls: PanelControls): RunnableCommand[] {
       hint: 'the list Auto mode acts on without asking',
       run: () => controls.go('settings'),
     },
+    {
+      id: 'safety.blocked-sites',
+      title: 'Block a site everywhere',
+      group: 'Safety',
+      keywords: ['blocklist', 'block', 'never', 'site'],
+      hint: 'the sites Navigator will not read or touch',
+      run: () => controls.go('settings'),
+    },
   ]
 
   const go: RunnableCommand[] = VIEWS.map((view) => ({

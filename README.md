@@ -101,7 +101,7 @@ semantic search, sessions and the undo buffer — none of it imports Chrome).
 | Permission        | Needed for                                                                 |
 | ----------------- | -------------------------------------------------------------------------- |
 | `sidePanel`       | Primary UI surface                                                          |
-| `storage`         | Model config, Auto mode site list, audit log                                |
+| `storage`         | Model config, site lists, audit log                                         |
 | `tabs`            | `list_tabs` / `switch_tab` / `close_tabs`, plus URL + title for page state   |
 | `tabGroups`       | `group_tabs` tool and automatic tab grouping                                |
 | `activeTab`       | Act on the tab the user invoked Navigator from                              |
@@ -398,45 +398,63 @@ come back in the theme you left.
 
 ---
 
-## Auto mode site list
+## Site lists: allowed and blocked
 
 **Auto** mode is the mode that says "I'll do it myself", and the only promise it makes is on the sites
-you have allowed. That list lives in Settings → Auto mode sites, in one row of the same IndexedDB
-store as the model config: nothing is synced, and an empty list means Navigator asks before every
-write, which is the safe direction to fail in.
+you have allowed. The other list is shorter to describe: a site you block is shut — reads and writes
+both, in every mode, with nothing to approve past it. Both live in Settings, in one row of the same
+IndexedDB store as the model config, and nothing is synced.
 
 | Piece | File | Job |
 | ----- | ---- | --- |
 | The rules | `src/safety/siteRules.ts` | normalise a host, decide whether a page is under an allowed or a blocked site |
 | The storage | `src/safety/siteRulesStore.ts` | remember both lists between panel opens |
 | The gate | `src/safety/modePolicy.ts` | turn mode + risk + site into allow, ask or block |
-| The worker | `src/background/allowApi.ts` | write a rule asked for by an approval card |
+| The worker | `src/background/siteApi.ts` | write a rule asked for by an approval card |
+| The cards | `src/sidepanel/components/SiteListCard.tsx` | add, remove and clear either list from Settings |
 
 **A rule is a host, not a URL.** Allowing `example.com` covers `shop.example.com`, whichever scheme the
 page happens to use, because subdomains inherit the trust you gave the site. The port and the path are
 left out on purpose: a promise about `example.com:8443` would be a promise about a server, not a site.
 `evil-example.com` is not under `example.com`, so a lookalike host never slips through a suffix match.
+Blocking matches the same way, so one rule closes a domain and everything under it.
 
-**Reads and control tools are not gated.** Only a write action asks. A page that happens to be a
-checkout page does not stop Navigator from reading it — the hard blocks (payment fields, passwords
-being created, consent checkboxes, OTP, destructive confirmations, sensitive uploads) are about the
-action, and they require your approval whatever the site list says.
+**Only the block list touches reads.** On a site you have not allowed, Auto mode still reads the page
+freely and asks before each write — a page that happens to be a checkout page does not stop Navigator
+from reading it. The hard blocks (payment fields, passwords being created, consent checkboxes, OTP,
+destructive confirmations, sensitive uploads) are about the action, and they require your approval
+whatever the site list says.
 
-**A run keeps the list it started with.** The worker reads the list once, when the task starts, so a
-site you allow while a task is waiting for you takes effect on the next task. The confirmation on the
-approval card says exactly that rather than leaving you to guess.
+**A block outranks every other decision, except an exit.** An approval card cannot widen a blocked
+site: there is no button that says "act here anyway". The two tools that only ever talk to you —
+`ask_user` and `finish` — are never blocked either, so a task stopped at a blocked site can still tell
+you why instead of dying silently.
 
-**"Allow `shop.test` in Auto mode"** appears on an approval card only when the site is the reason the
-card is up. Approving a step and changing a standing rule are two decisions, so they stay two buttons.
-The same list is reachable from the command palette (`allowlist`) and from
-`corepack pnpm exec node scripts/allowlist-check.mjs`, which types into the real card, reloads the
-panel and reads the stored rows back.
+**Research reads the same list.** A search hit on a blocked host is never opened; it is recorded as a
+discarded source with the reason, so the report shows what was skipped rather than quietly losing it.
+
+**The two lists fail in opposite directions.** An empty allow list means "ask before every write",
+which is the safe direction. A block list that cannot be read is the reverse: the task, recipe or
+research run stops, because acting without it could touch a site you closed.
+
+**A run keeps the lists it started with.** The worker reads both once, when the task starts, so a site
+you allow or block while a task is waiting for you takes effect on the next task. The confirmation on
+the approval card says exactly that rather than leaving you to guess.
+
+**Two buttons, two decisions.** "Allow `shop.test` in Auto mode" appears only when the site is the
+reason the card is up; "Never act on `shop.test`" appears on every card, including one raised by a hard
+block — closing a site is never the wrong answer to give. Approving a step and changing a standing
+rule stay separate clicks.
+
+Both lists are reachable from the command palette (`allowlist`, `blocklist`) and from
+`corepack pnpm exec node scripts/sites-check.mjs`, which types into both real cards, reloads the panel
+and reads the stored rows back.
 
 ---
 
 ## End-to-end tests
 
-`corepack pnpm test:e2e` runs the flows the spec names (§13.6), plus the Auto mode promise, against
+`corepack pnpm test:e2e` runs the flows the spec names (§13.6), plus both site-list promises, against
 the real built extension — real service worker, real content scripts, real IndexedDB, real Chrome tab
 groups:
 
@@ -446,6 +464,7 @@ groups:
 | Research | A question becomes a plan, real background tabs, a scraped results page, ranked sources and a cited five-source answer. |
 | Tab grouping | A sentence in the Tabs tab ends with Chrome itself holding the groups. |
 | Auto mode list | Auto stops on an unlisted site, the one click on the card writes the rule, and the next task fills the same form without asking. |
+| Blocked site | The "Never act on" click on a card writes a block, and the next task is refused at the read — no approval card, nothing filled, and the task still finishes to say why. |
 
 Nothing reaches the internet. `e2e/mock-server.mjs` is the whole outside world: the form page, five
 articles, a search results page and an OpenAI-compatible `/v1/chat/completions` that streams a fixed
@@ -492,13 +511,15 @@ in one browser would fight over it.
 | 11b   | Data tools: structured extraction, screenshot, file output, long-term memory | done |
 | 11c   | Command palette, keyboard-first navigation, screen-reader announcements | done |
 | 12    | Auto mode site list: rules, storage, gate, Settings card, approval-card shortcut, palette entry, E2E | done |
+| 13    | Domain blocklist: same rules file, fail-closed reads, gate outranks approval, research skips it, second Settings card, palette entry, E2E | done |
 
 ## Safety model
 
 Three autonomy modes — **Observe** (read-only), **Co-pilot** (approve each write action),
 **Auto** (autonomous within your allowlist). Every action is risk-scored; high-risk actions
 (submit, pay, delete, send, post) always require explicit approval. Auto mode goes one step further:
-on a site you have not allowed it asks before every write, even a low-risk one
-([the site list](#auto-mode-site-list)). Page text is treated as
+on a site you have not allowed it asks before every write, even a low-risk one. The blocklist goes one
+further than that: a site you close is shut for reads and writes in every mode, and no approval
+widens it ([the site lists](#site-lists-allowed-and-blocked)). Page text is treated as
 untrusted data and wrapped so prompt-injection attempts in page content are logged and ignored,
 never executed. Captchas and 2FA are never solved automatically — Navigator pauses and asks you.

@@ -9,6 +9,7 @@ import type { AgentMode } from './agent'
 import type { FormFieldView } from '@/content/formFields'
 import type { WaitCondition } from '@/content/waitFor'
 import type { ArticlePayload, ResearchDepth } from '@/research/types'
+import type { SiteRule } from '@/safety/siteRules'
 import type { TabIntent, TabReport } from '@/tabs/types'
 import type { PageState } from './pageState'
 import type { TaskEvent } from './task'
@@ -32,7 +33,7 @@ export type BackgroundMessage =
   | { kind: 'stop-task' }
   | { kind: 'task-status' }
   | { kind: 'approve-action'; id: string; approved: boolean }
-  | { kind: 'allow-site'; host: string }
+  | { kind: 'site-rule'; list: SiteRule; host: string }
   | { kind: 'answer-question'; id: string; answer: string }
   | { kind: 'set-overlay'; visible?: boolean; highlightIndex?: number; review?: number[] }
   | { kind: 'get-form-fields-active-tab' }
@@ -56,8 +57,8 @@ export type BackgroundResponse =
   | { ok: true; accepted: boolean; error?: string }
   /** Lets a panel that opens onto a live run rebuild its timeline and cards. */
   | { ok: true; running: boolean; label: string; events: TaskEvent[] }
-  /** The Auto mode site list, as it was stored after the last change. */
-  | { ok: true; allowlist: string[] }
+  /** The site list that was just changed, as it is stored from now on. */
+  | { ok: true; sites: string[] }
   | { ok: false; error: string }
   | ActResult
 
@@ -92,7 +93,7 @@ export function isBackgroundMessage(value: unknown): value is BackgroundMessage 
       value.kind === 'stop-task' ||
       value.kind === 'task-status' ||
       value.kind === 'approve-action' ||
-      value.kind === 'allow-site' ||
+      value.kind === 'site-rule' ||
       value.kind === 'answer-question' ||
       value.kind === 'set-overlay' ||
       value.kind === 'get-form-fields-active-tab' ||

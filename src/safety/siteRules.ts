@@ -9,6 +9,9 @@
  * page happens to use.
  */
 
+/** Which standing list a host belongs to: trusted by Auto, or closed everywhere. */
+export type SiteRule = 'allow' | 'block'
+
 /** A page's host plus how both lists judge it. `''` means "not a real page". */
 export interface SiteContext {
   host: string

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { ChevronDown, Clock, Download, Play, Square, Trash2, Upload, Workflow } from 'lucide-react'
 
 import { useRecipes, type PendingStep } from '../useRecipes'
-import { AllowSiteButton } from './AllowSiteButton'
+import { SiteRuleButton } from './SiteRuleButton'
 import { saveTextFile, stampedFilename } from '@/lib/download'
 import { importRecipesJson, recipeFileJson, recipesExportJson } from '@/recipes/store'
 import type { Recipe, RecipeSchedule } from '@/recipes/types'
@@ -271,9 +271,15 @@ function ApprovalCard({ approval, onAnswer }: { approval: PendingStep; onAnswer:
           Deny
         </button>
       </div>
-      {approval.hardBlock === null && approval.host !== '' ? (
-        <div className="mt-2 border-t border-amber-200 pt-2">
-          <AllowSiteButton host={approval.host} />
+      {/* Same rules as the task card: allowing a site would still ask after a hard
+          block, so that button only answers a card the site caused, while
+          closing the site entirely answers any card at all. */}
+      {approval.host !== '' ? (
+        <div className="mt-2 flex flex-col gap-1.5 border-t border-amber-200 pt-2">
+          {approval.hardBlock === null ? (
+            <SiteRuleButton list="allow" host={approval.host} />
+          ) : null}
+          <SiteRuleButton list="block" host={approval.host} />
         </div>
       ) : null}
     </div>

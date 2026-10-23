@@ -9,7 +9,7 @@ import {
 } from '@/types/messages'
 
 import { handleVaultRequest } from './vaultApi'
-import { allowSite } from './allowApi'
+import { addSiteRule } from './siteApi'
 import { researchFollowup, startResearch, stopResearch } from './research'
 import { restoreSchedules, scheduleRecipe, startRecipeRun, unscheduleRecipe } from './recipeRun'
 import { runTabCommand, runTabIntent, startTabWatchers } from './tabApi'
@@ -184,9 +184,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false
   }
 
-  if (message.kind === 'allow-site') {
-    allowSite(message.host)
-      .then((allowlist) => sendResponse({ ok: true, allowlist } satisfies BackgroundResponse))
+  if (message.kind === 'site-rule') {
+    addSiteRule(message.list, message.host)
+      .then((sites) => sendResponse({ ok: true, sites } satisfies BackgroundResponse))
       .catch((error: unknown) => {
         const text = error instanceof Error ? error.message : String(error)
         sendResponse({ ok: false, error: text } satisfies BackgroundResponse)

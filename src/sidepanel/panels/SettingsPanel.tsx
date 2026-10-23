@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Coins, Loader2, Moon, PlugZap, ShieldCheck, Sun, X, XCircle } from 'lucide-react'
+import { CheckCircle2, Coins, Loader2, Moon, PlugZap, Sun, XCircle } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { nextTheme, type Theme } from '@/lib/theme'
 import { clearPricing, loadPricing, savePricing } from '@/memory/cost'
-import { EMPTY_ALLOWLIST_HINT, addRule, normalizeHost, removeRule } from '@/safety/siteRules'
-import { clearAllowlist, loadAllowlist, saveAllowlist } from '@/safety/siteRulesStore'
+import { EMPTY_ALLOWLIST_HINT, EMPTY_BLOCKLIST_HINT } from '@/safety/siteRules'
 import {
   PROVIDER_PRESETS,
   loadModelConfig,
@@ -13,6 +12,8 @@ import {
   type ModelConfig,
 } from '@/llm/config'
 import { complete } from '@/llm'
+
+import { SiteListCard } from '../components/SiteListCard'
 
 import type { ProviderId } from '@/llm/types'
 
@@ -44,11 +45,6 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
   const [priceError, setPriceError] = useState<string | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  /** Auto mode's site list: `null` while it is still being read. */
-  const [sites, setSites] = useState<string[] | null>(null)
-  const [siteDraft, setSiteDraft] = useState('')
-  const [siteError, setSiteError] = useState<string | null>(null)
-  const [siteReload, setSiteReload] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -80,23 +76,6 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
         setHasPrice(true)
       })
   }, [])
-
-  useEffect(() => {
-    let alive = true
-    setSiteError(null)
-    void loadAllowlist()
-      .then((hosts) => {
-        if (alive) setSites(hosts)
-      })
-      .catch((error: unknown) => {
-        if (!alive) return
-        setSites(null)
-        setSiteError(error instanceof Error ? error.message : 'Could not read the site list.')
-      })
-    return () => {
-      alive = false
-    }
-  }, [siteReload])
 
   const dark = theme === 'dark'
 
@@ -219,44 +198,6 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
     setPrice({ symbol: '', input: '', output: '' })
     setHasPrice(false)
     setPriceError(null)
-  }
-
-  /**
-   * The list is saved on every change rather than behind a Save button: a rule
-   * you can see but have to remember to commit is a rule that is not there.
-   */
-  async function handleAddSite() {
-    const host = normalizeHost(siteDraft)
-    if (host === '') {
-      setSiteError('Type a site address, like example.com')
-      return
-    }
-    try {
-      setSites(await saveAllowlist(addRule(sites ?? [], host)))
-      setSiteDraft('')
-      setSiteError(null)
-    } catch (error) {
-      setSiteError(error instanceof Error ? error.message : 'Could not save the site.')
-    }
-  }
-
-  async function handleRemoveSite(host: string) {
-    try {
-      setSites(await saveAllowlist(removeRule(sites ?? [], host)))
-      setSiteError(null)
-    } catch (error) {
-      setSiteError(error instanceof Error ? error.message : 'Could not remove the site.')
-    }
-  }
-
-  async function handleClearSites() {
-    try {
-      await clearAllowlist()
-      setSites([])
-      setSiteError(null)
-    } catch (error) {
-      setSiteError(error instanceof Error ? error.message : 'Could not clear the list.')
-    }
   }
 
   if (!config) {
@@ -439,108 +380,25 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
         ) : null}
       </section>
 
-      <section className="flex flex-col gap-3 rounded-xl border bg-card p-3" data-allowlist>
-        <div className="flex items-start gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <ShieldCheck className="size-4 text-muted-foreground" strokeWidth={1.8} aria-hidden />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Auto mode sites</p>
-            <p className="text-xs text-muted-foreground">
-              Sites Navigator may write to on its own in Auto mode. A subdomain is covered by the
-              site above it, and a task keeps the list it started with.
-            </p>
-          </div>
-        </div>
+      <SiteListCard
+        list="allow"
+        title="Auto mode sites"
+        description="Sites Navigator may write to on its own in Auto mode. A subdomain is covered by the site above it, and a task keeps the list it started with."
+        inputLabel="Site to allow"
+        emptyHint={EMPTY_ALLOWLIST_HINT}
+        removePrefix="Stop allowing"
+        clearLabel="Stop allowing every site"
+      />
 
-        <div className="flex gap-2">
-          <input
-            value={siteDraft}
-            onChange={(event) => {
-              setSiteDraft(event.target.value)
-              setSiteError(null)
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter') return
-              event.preventDefault()
-              void handleAddSite()
-            }}
-            placeholder="example.com"
-            aria-label="Site to allow"
-            spellCheck={false}
-            autoComplete="off"
-            className="h-9 min-w-0 flex-1 rounded-lg border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            type="button"
-            onClick={() => void handleAddSite()}
-            disabled={sites === null || siteDraft.trim() === ''}
-            className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
-          >
-            Add
-          </button>
-        </div>
-
-        {sites === null ? (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            Reading the saved list…
-          </p>
-        ) : sites.length === 0 ? (
-          <p
-            className="rounded-lg border border-dashed px-2.5 py-2 text-xs text-muted-foreground"
-            data-allowlist-empty
-          >
-            {EMPTY_ALLOWLIST_HINT}
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1" data-allowlist-rows>
-            {sites.map((host) => (
-              <li
-                key={host}
-                className="flex items-center gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs"
-              >
-                <span className="min-w-0 flex-1 truncate font-medium">{host}</span>
-                <button
-                  type="button"
-                  onClick={() => void handleRemoveSite(host)}
-                  aria-label={`Stop allowing ${host}`}
-                  title={`Stop allowing ${host}`}
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-card hover:text-red-600"
-                >
-                  <X className="size-3.5" strokeWidth={1.8} aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {sites !== null && sites.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => void handleClearSites()}
-            className="self-start text-xs font-semibold text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            Stop allowing every site
-          </button>
-        ) : null}
-
-        {siteError ? (
-          <p className="flex flex-wrap items-center gap-1.5 text-xs text-red-600 dark:text-red-400" role="alert">
-            <XCircle className="size-3.5 shrink-0" aria-hidden />
-            {siteError}
-            {sites === null ? (
-              <button
-                type="button"
-                onClick={() => setSiteReload((key) => key + 1)}
-                className="rounded-md border px-2 py-0.5 font-medium hover:bg-muted"
-              >
-                Try again
-              </button>
-            ) : null}
-          </p>
-        ) : null}
-      </section>
+      <SiteListCard
+        list="block"
+        title="Blocked sites"
+        description="Sites Navigator must not read or touch at all, in any mode. A research run skips them too, and only you can take a site off this list."
+        inputLabel="Site to block"
+        emptyHint={EMPTY_BLOCKLIST_HINT}
+        removePrefix="Stop blocking"
+        clearLabel="Stop blocking every site"
+      />
 
       <section className="flex flex-col gap-3 rounded-xl border bg-card p-3" data-pricing>
         <div className="flex items-start gap-2.5">

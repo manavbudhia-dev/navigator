@@ -139,4 +139,14 @@ describe('buildCommands', () => {
     buildCommands(panel).find((entry) => entry.id === 'safety.auto-sites')?.run()
     expect(panel.go).toHaveBeenCalledWith('settings')
   })
+
+  it('offers the blocked list without letting it borrow the allow list’s words', () => {
+    const commands = buildCommands(controls())
+    expect(filterCommands('blocklist', commands)[0]?.id).toBe('safety.blocked-sites')
+    expect(filterCommands('block this site', commands)[0]?.id).toBe('safety.blocked-sites')
+    expect(filterCommands('allowlist', commands)[0]?.id).toBe('safety.auto-sites')
+    const panel = controls()
+    buildCommands(panel).find((entry) => entry.id === 'safety.blocked-sites')?.run()
+    expect(panel.go).toHaveBeenCalledWith('settings')
+  })
 })

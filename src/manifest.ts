@@ -46,7 +46,7 @@ export default defineManifest({
 
   permissions: [
     'sidePanel', // primary UI surface
-    'storage', // model config, allowlists, audit log
+    'storage', // model config, site lists, audit log
     'tabs', // list_tabs/switch_tab/close_tabs + URL/title for page-state meta
     'tabGroups', // group_tabs tool + auto-grouping
     'activeTab', // act on the tab the user invoked us from
