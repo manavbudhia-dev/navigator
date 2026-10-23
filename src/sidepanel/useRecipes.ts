@@ -151,7 +151,8 @@ export function useRecipes() {
     setLines([])
     setRunningId(recipe.id)
     const problem = refusal(await send({ kind: 'run-recipe', id: recipe.id, values, mode }), 'The replay was refused.')
-    setRunningId(null)
+    // A refused replay must not clear the badge of a run that is still going.
+    setRunningId((prev) => (prev === recipe.id ? null : prev))
     if (problem !== null) setError(problem)
   }, [])
 

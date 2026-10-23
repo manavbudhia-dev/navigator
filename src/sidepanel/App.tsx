@@ -38,6 +38,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const goalRef = useRef<HTMLTextAreaElement>(null)
+  const overlaySeq = useRef(0)
   const vault = useVault()
   const task = useTaskBridge()
 
@@ -58,12 +59,15 @@ export default function App() {
   const setOverlay = useCallback(async (visible: boolean): Promise<void> => {
     if (!inExtension) return
     setOverlayOn(visible)
+    const mine = ++overlaySeq.current
     const message: BackgroundMessage = { kind: 'set-overlay', visible }
     try {
       const response = (await chrome.runtime.sendMessage(message)) as BackgroundResponse
-      if (!response.ok) setOverlayOn(!visible)
+      // Only the newest request may correct the switch: a slower refusal from an
+      // earlier toggle would otherwise undo the one the user made after it.
+      if (mine === overlaySeq.current && !response.ok) setOverlayOn(!visible)
     } catch {
-      setOverlayOn(!visible)
+      if (mine === overlaySeq.current) setOverlayOn(!visible)
     }
   }, [])
 
