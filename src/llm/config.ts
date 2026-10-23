@@ -71,8 +71,8 @@ export const PROVIDER_PRESETS: Array<{
     label: 'Gemini',
     provider: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    modelName: 'gemini-2.5-pro',
-    smallModelName: 'gemini-2.5-flash',
+    modelName: 'gemini-3.8-flash',
+    smallModelName: 'gemini-3.8-flash',
   },
 ]
 
