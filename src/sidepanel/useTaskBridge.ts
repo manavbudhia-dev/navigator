@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { inExtension } from '@/lib/extension'
 import { isTaskEventMessage, type TaskEvent } from '@/types/task'
+
+import { backfillEvents } from './hydrate'
 import type { AgentMode } from '@/types/agent'
 import type { BackgroundMessage, BackgroundResponse } from '@/types/messages'
 
@@ -48,8 +50,8 @@ export function useTaskBridge() {
   const [startError, setStartError] = useState<string | null>(null)
   const [answerError, setAnswerError] = useState<string | null>(null)
 
-  const applyEvent = useCallback((event: TaskEvent): void => {
-    setEvents((prev) => [...prev.slice(-199), event])
+  /** What an event means for the prompts on screen; safe to run twice. */
+  const applyStatus = useCallback((event: TaskEvent): void => {
     if (event.type === 'approval') {
       setAnswerError(null)
       setApproval({
@@ -74,6 +76,14 @@ export function useTaskBridge() {
     }
   }, [])
 
+  const applyEvent = useCallback(
+    (event: TaskEvent): void => {
+      setEvents((prev) => [...prev.slice(-199), event])
+      applyStatus(event)
+    },
+    [applyStatus],
+  )
+
   useEffect(() => {
     if (!inExtension) return
     const listener = (message: unknown): undefined => {
@@ -96,16 +106,16 @@ export function useTaskBridge() {
     let cancelled = false
     void send({ kind: 'task-status' }).then((response) => {
       if (cancelled || response === null || !('running' in response)) return
-      setEvents([])
-      setApproval(null)
-      setQuestion(null)
-      for (const event of response.events) applyEvent(event)
+      // Merge, never clear: an event the live listener already delivered while
+      // this request was in flight is still the newest truth about the run.
+      setEvents((prev) => backfillEvents(response.events, prev))
+      for (const event of response.events) applyStatus(event)
       setRunning(response.running)
     })
     return () => {
       cancelled = true
     }
-  }, [applyEvent])
+  }, [applyStatus])
 
   const start = useCallback(async (goal: string, mode: AgentMode): Promise<boolean> => {
     setEvents([])
