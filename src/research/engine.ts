@@ -7,6 +7,7 @@ import {
   parseScores,
   parseSummary,
 } from '@/prompts/research'
+import { isBlocked } from '@/safety/siteRules'
 import { buildNote, ensureClaims, keywordGate, PREFILTER_FLOOR } from './notes'
 import { runPool, withTimeout } from './pool'
 import {
@@ -56,6 +57,8 @@ export interface ResearchInput {
   signal: AbortSignal
   concurrency?: number
   readTimeoutMs?: number
+  /** Sites the user closed: a hit on one is never opened (spec §9). */
+  blockedSites?: readonly string[]
 }
 
 interface GatherOutcome {
@@ -117,6 +120,16 @@ export function gapToSubQuestion(gap: string, id: string): SubQuestion {
     id,
     question: gap.length > 200 ? `${gap.slice(0, 199)}…` : gap,
     queries: unique([`${joined} evidence`, `${joined} criticism`]).slice(0, 2),
+  }
+}
+
+/** A site the user closed is never opened, and the report says why it was skipped. */
+function blockedSite(hit: { url: string; title: string }): GatherOutcome {
+  return {
+    note: null,
+    discarded: { url: hit.url, title: hit.title, relevance: 0, reason: 'site is on your blocked list' },
+    promptTokens: 0,
+    completionTokens: 0,
   }
 }
 
@@ -188,6 +201,7 @@ async function gather(
   seen: Set<string>,
 ): Promise<{ notes: SourceNote[]; discarded: DiscardedSource[]; promptTokens: number; completionTokens: number }> {
   const plan = DEPTH_PLANS[input.depth]
+  const blocked = input.blockedSites ?? []
   const tasks: { sub: SubQuestion; query: string }[] = []
   for (const sub of subQuestions) {
     for (const query of sub.queries.slice(0, plan.queriesPerSub)) {
@@ -216,6 +230,12 @@ async function gather(
         checkAbort(input.signal)
         if (seen.has(hit.url)) continue
         seen.add(hit.url)
+        // A blocked site costs a slot in the report but never a tab: skipping
+        // it silently would leave the user wondering where the source went.
+        if (isBlocked(hit.url, blocked)) {
+          local.push(blockedSite(hit))
+          continue
+        }
         opened += 1
 
         input.onEvent({ type: 'open', url: hit.url, title: hit.title })

@@ -6,6 +6,7 @@ import { buildFollowupContext } from '@/research/retrieve'
 import { citationNumbers } from '@/research/citations'
 import { loadResearchResult, loadTabConcurrency, saveResearchResult } from '@/research/store'
 import { KillSwitch } from '@/safety/killSwitch'
+import { loadBlocklist } from '@/safety/siteRulesStore'
 import type { ResearchDepth, ResearchEvent, ResearchEventMessage } from '@/research/types'
 
 import { createResearchHost } from './researchHost'
@@ -50,12 +51,16 @@ export async function startResearch(
   try {
     const config = await loadModelConfig()
     const concurrency = await loadTabConcurrency()
+    // The blocked list is read before the run starts: gathering without it
+    // would open a page the user closed, and a failed read stops the run.
+    const blockedSites = await loadBlocklist()
     void runResearch({
       id: `r${Date.now()}`,
       question,
       depth,
       host,
       concurrency,
+      blockedSites,
       complete: (messages, kind, signal) =>
         complete({ messages }, config, signal === undefined ? { kind } : { kind, signal }),
       onEvent: broadcast,

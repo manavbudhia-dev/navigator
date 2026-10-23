@@ -54,7 +54,7 @@ const typeInto = (selector, value) =>
 
 const storedList = () =>
   page.evaluate(async () => {
-    const { loadAllowlist } = await import('/src/safety/allowlistStore.ts')
+    const { loadAllowlist } = await import('/src/safety/siteRulesStore.ts')
     return loadAllowlist()
   })
 
@@ -67,7 +67,7 @@ const shownRows = () =>
 
 // A fresh install has no allowed sites, which is what the card has to say.
 await page.evaluate(async () => {
-  const { clearAllowlist } = await import('/src/safety/allowlistStore.ts')
+  const { clearAllowlist } = await import('/src/safety/siteRulesStore.ts')
   await clearAllowlist()
 })
 await page.reload({ waitUntil: 'networkidle0' })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { addRule, hostOf, isAllowlisted, normalizeHost, removeRule, siteFor } from './allowlist'
+import { addRule, hostOf, hostMatchesRules, normalizeHost, removeRule, siteFor } from './siteRules'
 
 describe('normalizeHost', () => {
   it('reduces a pasted URL to the host the rule is about', () => {
@@ -37,32 +37,69 @@ describe('hostOf', () => {
   })
 })
 
-describe('isAllowlisted', () => {
+describe('hostMatchesRules', () => {
   it('lets a rule cover the site itself and anything beneath it', () => {
-    expect(isAllowlisted('example.com', ['example.com'])).toBe(true)
-    expect(isAllowlisted('shop.example.com', ['example.com'])).toBe(true)
-    expect(isAllowlisted('a.b.example.com', ['example.com'])).toBe(true)
+    expect(hostMatchesRules('example.com', ['example.com'])).toBe(true)
+    expect(hostMatchesRules('shop.example.com', ['example.com'])).toBe(true)
+    expect(hostMatchesRules('a.b.example.com', ['example.com'])).toBe(true)
   })
 
   it('does not let a lookalike borrow another site’s rule', () => {
-    expect(isAllowlisted('evil-example.com', ['example.com'])).toBe(false)
-    expect(isAllowlisted('notexample.com', ['example.com'])).toBe(false)
-    expect(isAllowlisted('example.com.evil.test', ['example.com'])).toBe(false)
+    expect(hostMatchesRules('evil-example.com', ['example.com'])).toBe(false)
+    expect(hostMatchesRules('notexample.com', ['example.com'])).toBe(false)
+    expect(hostMatchesRules('example.com.evil.test', ['example.com'])).toBe(false)
   })
 
   it('ignores a www it was never asked about and any rule that is not a host', () => {
-    expect(isAllowlisted('shop.example.com', [' EXAMPLE.com '])).toBe(true)
-    expect(isAllowlisted('shop.test', [])).toBe(false)
-    expect(isAllowlisted('shop.test', ['http://'])).toBe(false)
-    expect(isAllowlisted('', ['example.com'])).toBe(false)
+    expect(hostMatchesRules('shop.example.com', [' EXAMPLE.com '])).toBe(true)
+    expect(hostMatchesRules('shop.test', [])).toBe(false)
+    expect(hostMatchesRules('shop.test', ['http://'])).toBe(false)
+    expect(hostMatchesRules('', ['example.com'])).toBe(false)
   })
 })
 
 describe('siteFor', () => {
   it('judges the page an action happens on', () => {
-    expect(siteFor('https://shop.test/checkout', ['shop.test'])).toEqual({ host: 'shop.test', allowlisted: true })
-    expect(siteFor('https://other.test/checkout', ['shop.test'])).toEqual({ host: 'other.test', allowlisted: false })
-    expect(siteFor(undefined, ['shop.test'])).toEqual({ host: '', allowlisted: false })
+    expect(siteFor('https://shop.test/checkout', ['shop.test'])).toEqual({
+      host: 'shop.test',
+      allowlisted: true,
+      blocked: false,
+    })
+    expect(siteFor('https://other.test/checkout', ['shop.test'])).toEqual({
+      host: 'other.test',
+      allowlisted: false,
+      blocked: false,
+    })
+    expect(siteFor(undefined, ['shop.test'])).toEqual({ host: '', allowlisted: false, blocked: false })
+  })
+
+  it('marks a page blocked when a block rule covers its host', () => {
+    expect(siteFor('https://bank.test/accounts', [], ['bank.test'])).toEqual({
+      host: 'bank.test',
+      allowlisted: false,
+      blocked: true,
+    })
+    expect(siteFor('https://a.bank.test/', [], ['bank.test'])).toEqual({
+      host: 'a.bank.test',
+      allowlisted: false,
+      blocked: true,
+    })
+  })
+
+  it('lets a blocked site be both, so a stale allow cannot hide the block', () => {
+    expect(siteFor('https://bank.test/', ['bank.test'], ['bank.test'])).toEqual({
+      host: 'bank.test',
+      allowlisted: true,
+      blocked: true,
+    })
+  })
+
+  it('ignores a block rule that is not a host', () => {
+    expect(siteFor('https://shop.test/', ['shop.test'], ['http://', ''])).toEqual({
+      host: 'shop.test',
+      allowlisted: true,
+      blocked: false,
+    })
   })
 })
 

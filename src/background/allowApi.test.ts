@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { allowSite } from './allowApi'
-import { loadAllowlist, saveAllowlist } from '@/safety/allowlistStore'
+import { loadAllowlist, saveAllowlist } from '@/safety/siteRulesStore'
 
-vi.mock('@/safety/allowlistStore', () => ({
+vi.mock('@/safety/siteRulesStore', () => ({
   loadAllowlist: vi.fn<() => Promise<string[]>>(),
   saveAllowlist: vi.fn<(hosts: readonly string[]) => Promise<string[]>>(),
+  loadBlocklist: vi.fn<() => Promise<string[]>>(),
+  saveBlocklist: vi.fn<(hosts: readonly string[]) => Promise<string[]>>(),
 }))
 
 /**

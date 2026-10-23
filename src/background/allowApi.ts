@@ -1,5 +1,5 @@
-import { addRule, normalizeHost } from '@/safety/allowlist'
-import { loadAllowlist, saveAllowlist } from '@/safety/allowlistStore'
+import { addRule, normalizeHost } from '@/safety/siteRules'
+import { loadAllowlist, saveAllowlist } from '@/safety/siteRulesStore'
 
 /**
  * "Allow this site" (spec §9), asked of the worker rather than written by the

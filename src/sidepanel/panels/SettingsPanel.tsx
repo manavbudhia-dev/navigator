@@ -4,8 +4,8 @@ import { CheckCircle2, Coins, Loader2, Moon, PlugZap, ShieldCheck, Sun, X, XCirc
 import { cn } from '@/lib/utils'
 import { nextTheme, type Theme } from '@/lib/theme'
 import { clearPricing, loadPricing, savePricing } from '@/memory/cost'
-import { EMPTY_ALLOWLIST_HINT, addRule, normalizeHost, removeRule } from '@/safety/allowlist'
-import { clearAllowlist, loadAllowlist, saveAllowlist } from '@/safety/allowlistStore'
+import { EMPTY_ALLOWLIST_HINT, addRule, normalizeHost, removeRule } from '@/safety/siteRules'
+import { clearAllowlist, loadAllowlist, saveAllowlist } from '@/safety/siteRulesStore'
 import {
   PROVIDER_PRESETS,
   loadModelConfig,

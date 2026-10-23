@@ -407,8 +407,8 @@ write, which is the safe direction to fail in.
 
 | Piece | File | Job |
 | ----- | ---- | --- |
-| The rules | `src/safety/allowlist.ts` | normalise a host, decide whether a page is under an allowed site |
-| The storage | `src/safety/allowlistStore.ts` | remember the list between panel opens |
+| The rules | `src/safety/siteRules.ts` | normalise a host, decide whether a page is under an allowed or a blocked site |
+| The storage | `src/safety/siteRulesStore.ts` | remember both lists between panel opens |
 | The gate | `src/safety/modePolicy.ts` | turn mode + risk + site into allow, ask or block |
 | The worker | `src/background/allowApi.ts` | write a rule asked for by an approval card |
 

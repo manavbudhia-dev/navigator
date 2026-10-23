@@ -1,10 +1,10 @@
 import { complete } from '@/llm'
 import { buildSystemPrompt } from '@/prompts/system'
 import { sanitizeUntrusted } from '@/prompts/sanitize'
-import { siteFor } from '@/safety/allowlist'
+import { siteFor } from '@/safety/siteRules'
 import { recordAudit } from '@/safety/audit'
 import { assessRisk } from '@/safety/risk'
-import { autoSiteReason, decide } from '@/safety/modePolicy'
+import { autoSiteReason, decide, siteBlockReason } from '@/safety/modePolicy'
 
 import { ActionQueue } from './queue'
 import { compactHistory, estimateMessagesTokens } from './compact'
@@ -92,6 +92,8 @@ export interface AgentRunOptions {
   runId?: string
   /** Hosts Auto mode may act on alone (spec §9). Empty means it asks everywhere. */
   autoAllow?: readonly string[]
+  /** Hosts no mode may read or act on (spec §9). */
+  blockedSites?: readonly string[]
   /** Where the action happened and what it looked like afterwards (spec §9). */
   probe?: AuditProbe
   maxSteps?: number
@@ -207,6 +209,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
   const newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10))
   const maxSteps = options.maxSteps ?? 40
   const autoAllow = options.autoAllow ?? []
+  const blockedSites = options.blockedSites ?? []
   const probe = options.probe
   const readUrl = probe === undefined ? null : (): Promise<string | null> => probe.url()
   const readThumb = probe === undefined ? null : (): Promise<string | null> => probe.thumb()
@@ -433,7 +436,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         element: lineInfo === null ? null : riskElementOf(lineInfo),
         ...(where.url === undefined ? {} : { url: where.url }),
       })
-      const site = siteFor(where.url, autoAllow)
+      const site = siteFor(where.url, autoAllow, blockedSites)
       const decision = decide(mode, spec.kind, assessment, site)
       const siteReason = decision === 'require-approval' ? autoSiteReason(mode, site) : null
       const reasons = siteReason === null ? assessment.reasons : [...assessment.reasons, siteReason]
@@ -442,7 +445,11 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       hooks.emit({ type: 'action', id: call.id, tool: call.name, args: shownArgs, summary: actionSummary })
 
       if (decision === 'block') {
-        const reason = `Blocked by ${mode} mode (${assessment.level} risk).`
+        // A blocked site says "not here", which is a different instruction to
+        // the model than "not in this mode": the site stays shut for the rest
+        // of the run, so retrying with another tool would only burn steps.
+        const fromSite = siteBlockReason(site)
+        const reason = fromSite ?? `Blocked by ${mode} mode (${assessment.level} risk).`
         hooks.emit({ type: 'blocked', tool: call.name, reason })
         await recordAudit({
           goal,
@@ -456,7 +463,11 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
           ...(await evidence()),
           ...chargeTokens(),
         })
-        pushToolResult(call.id, call.name, reason + ' Do not retry write actions in this mode.')
+        pushToolResult(
+          call.id,
+          call.name,
+          fromSite === null ? reason + ' Do not retry write actions in this mode.' : reason + ' Do not use any tool on this site.',
+        )
         continue
       }
 

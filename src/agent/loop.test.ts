@@ -142,7 +142,7 @@ function run(
   turns: CompletionResult[],
   mode: AgentMode,
   approve = true,
-  evidence: { runId?: string; probe?: AuditProbe; tools?: ToolSpec[]; autoAllow?: readonly string[] } = {},
+  evidence: { runId?: string; probe?: AuditProbe; tools?: ToolSpec[]; autoAllow?: readonly string[]; blockedSites?: readonly string[] } = {},
 ) {
   const { host, acts } = makeHost()
   const { hooks, events, approvals, questions } = makeHooks(approve)
@@ -248,6 +248,52 @@ describe('runAgentTask', () => {
     await promise
     expect(approvals).toHaveLength(0)
     expect(acts).toEqual(['click:0'])
+  })
+
+  it('a blocked site stops the read as well as the write, even in auto mode', async () => {
+    vi.mocked(recordAudit).mockClear()
+    const probe: AuditProbe = { url: async () => 'https://bank.test/accounts', thumb: async () => null }
+    const { promise, approvals, events, acts } = run(
+      [
+        toolCall('read_page', {}),
+        toolCall('navigate', { url: 'https://bank.test/pay' }),
+        toolCall('finish', { success: true, summary: 'nothing happened' }),
+      ],
+      'auto',
+      true,
+      { probe, autoAllow: ['bank.test'], blockedSites: ['bank.test'] },
+    )
+    const outcome = await promise
+    expect(outcome.summary).toBe('nothing happened')
+    expect(approvals).toHaveLength(0)
+    expect(acts).toEqual([])
+    const blocked = events.filter((event) => event.type === 'blocked')
+    expect(blocked.map((event) => (event.type === 'blocked' ? event.reason : ''))).toEqual([
+      'bank.test is on your blocked list, so Navigator does not read or act on it.',
+      'bank.test is on your blocked list, so Navigator does not read or act on it.',
+    ])
+    expect(events.some((event) => event.type === 'approval')).toBe(false)
+    expect(auditRows().filter((row) => row.decision === 'block').map((row) => row.detail)).toEqual([
+      'bank.test is on your blocked list, so Navigator does not read or act on it.',
+      'bank.test is on your blocked list, so Navigator does not read or act on it.',
+    ])
+  })
+
+  it('the block list never silences ask_user or finish', async () => {
+    const probe: AuditProbe = { url: async () => 'https://bank.test/accounts', thumb: async () => null }
+    const { promise, questions, events } = run(
+      [
+        toolCall('ask_user', { question: 'This site is blocked, so I stopped.' }),
+        toolCall('finish', { success: false, summary: 'blocked' }),
+      ],
+      'auto',
+      true,
+      { probe, blockedSites: ['bank.test'] },
+    )
+    const outcome = await promise
+    expect(questions).toEqual(['This site is blocked, so I stopped.'])
+    expect(outcome.summary).toBe('blocked')
+    expect(events.some((event) => event.type === 'blocked')).toBe(false)
   })
 
   it('keeps a typed secret out of the timeline, the card and the audit', async () => {

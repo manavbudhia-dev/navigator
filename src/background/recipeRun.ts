@@ -6,11 +6,11 @@ import { healGoal } from '@/prompts/recipes'
 import { replayRecipe, startUrl } from '@/recipes/replay'
 import { nextSlot, periodInMinutes } from '@/recipes/schedule'
 import { getRecipe, listRecipes, saveRecipe } from '@/recipes/store'
-import { siteFor } from '@/safety/allowlist'
-import { loadAllowlist } from '@/safety/allowlistStore'
+import { siteFor } from '@/safety/siteRules'
+import { loadAllowlist, loadBlocklist } from '@/safety/siteRulesStore'
 import { recordAudit } from '@/safety/audit'
 import { assessRisk } from '@/safety/risk'
-import { autoSiteReason, decide } from '@/safety/modePolicy'
+import { autoSiteReason, decide, siteBlockReason } from '@/safety/modePolicy'
 import { coreTools } from '@/tools/definitions'
 import { dataTools } from '@/tools/dataTools'
 import { tabTools } from '@/tools/tabTools'
@@ -112,6 +112,9 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
   // A settings read that fails degrades to asking on every site, which is the
   // safe direction, and never to acting alone somewhere the user never allowed.
   const allowlist = await loadAllowlist().catch(() => [])
+  // A blocked list that cannot be read is not a licence to ignore it: the run
+  // stops here rather than acting on a site the user closed.
+  const blocked = await loadBlocklist()
   const host = createToolHost()
   const registry = new ToolRegistry([...coreTools(), ...tabTools(), ...dataTools()])
   const run = beginRun(`recipe "${recipe.name}"`)
@@ -200,12 +203,19 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
 
   const permit = async (step: RecipeStep, index: number | null): Promise<boolean> => {
     const { kind, assessment } = riskFor(step, registry, index, liveLines, pageUrl)
-    const site = siteFor(pageUrl, allowlist)
+    const site = siteFor(pageUrl, allowlist, blocked)
     const decision = decide(options.mode, kind, assessment, site)
     if (decision === 'allow') return true
 
     if (decision === 'block') {
-      await audit(step, step.args, assessment, 'block', false, `Blocked by ${options.mode} mode.`)
+      // Say which block stopped it: a site the user closed is not the same
+      // message as a mode that cannot write, and the timeline is where they
+      // will look for why the replay stopped.
+      const fromSite = siteBlockReason(site)
+      await audit(step, step.args, assessment, 'block', false, fromSite ?? `Blocked by ${options.mode} mode.`)
+      if (fromSite !== null) {
+        broadcast({ type: 'blocked', tool: step.tool, reason: fromSite })
+      }
       return false
     }
 
@@ -260,6 +270,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
       tabs: tabOps,
       runId,
       autoAllow: allowlist,
+      blockedSites: blocked,
       maxSteps: HEAL_STEPS,
     })
     return outcome.success ? outcome.summary : null

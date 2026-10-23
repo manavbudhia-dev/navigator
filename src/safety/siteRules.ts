@@ -1,17 +1,19 @@
 /**
- * Auto mode's site list (spec §9): "acts alone on allowlisted sites".
- * Two files because the rules are cheap to test and the storage is not —
- * `allowlist.ts` decides, `allowlistStore.ts` remembers.
+ * The site lists the safety gate reads (spec §9): the hosts Auto mode may act
+ * on alone, and the hosts Navigator never acts on. Two files because the rules
+ * are cheap to test and the storage is not — `siteRules.ts` decides,
+ * `siteRulesStore.ts` remembers.
  *
- * A rule is a host, not a full URL: you trust `example.com`, and everything
- * under it (`shop.example.com`) inherits that trust, whichever scheme the page
- * happens to use.
+ * A rule is a host, not a full URL: you judge `example.com`, and everything
+ * under it (`shop.example.com`) inherits that judgement, whichever scheme the
+ * page happens to use.
  */
 
-/** A page's host plus whether the user has allowed it. `''` means "not a real page". */
+/** A page's host plus how both lists judge it. `''` means "not a real page". */
 export interface SiteContext {
   host: string
   allowlisted: boolean
+  blocked: boolean
 }
 
 /** Strip the scheme, the path and a leading `www.`; lowercase the rest. */
@@ -42,20 +44,37 @@ export function hostOf(url: string | null | undefined): string {
   return normalizeHost(raw)
 }
 
-/** Is `host` the rule itself or something beneath it? */
-export function isAllowlisted(host: string, rules: readonly string[]): boolean {
+/**
+ * Is `host` the rule itself or something beneath it? One matcher for both
+ * lists: a block is written the same way as an allow, so it must also widen
+ * the same way.
+ */
+export function hostMatchesRules(host: string, rules: readonly string[]): boolean {
   if (host === '') return false
   return rules.some((rule) => {
-    const allowed = normalizeHost(rule)
-    if (allowed === '') return false
-    return host === allowed || host.endsWith(`.${allowed}`)
+    const named = normalizeHost(rule)
+    if (named === '') return false
+    return host === named || host.endsWith(`.${named}`)
   })
 }
 
 /** The gate as the policy sees it: the page an action happens on, already judged. */
-export function siteFor(url: string | null | undefined, rules: readonly string[]): SiteContext {
+export function siteFor(
+  url: string | null | undefined,
+  allowRules: readonly string[],
+  blockRules: readonly string[] = [],
+): SiteContext {
   const host = hostOf(url)
-  return { host, allowlisted: isAllowlisted(host, rules) }
+  return {
+    host,
+    allowlisted: hostMatchesRules(host, allowRules),
+    blocked: hostMatchesRules(host, blockRules),
+  }
+}
+
+/** Is this page on a site the user closed? Reads count, so research asks here too. */
+export function isBlocked(url: string | null | undefined, blockRules: readonly string[]): boolean {
+  return hostMatchesRules(hostOf(url), blockRules)
 }
 
 /** Add a rule, keeping the list normalized, unique and alphabetical. */
@@ -71,6 +90,9 @@ export function removeRule(rules: readonly string[], value: string): string[] {
   return rules.filter((rule) => normalizeHost(rule) !== host)
 }
 
-/** How the list is described to the user when it is empty. */
+/** How each list is described to the user when it is empty. */
 export const EMPTY_ALLOWLIST_HINT =
   'No sites yet. In Auto mode Navigator asks before every write until you allow a site here.'
+
+export const EMPTY_BLOCKLIST_HINT =
+  'No blocked sites. Add one and Navigator refuses to read or write there in any mode.'

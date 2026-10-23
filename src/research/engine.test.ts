@@ -156,6 +156,21 @@ describe('runResearch without a model', () => {
     expect(result.sources.map((note) => note.url)).toEqual([CON])
     expect(h.reads).toContain(PRO)
   })
+
+  it('never opens a page on a site the user blocked', async () => {
+    const { h, input } = setup()
+    const result = await runResearch(input({ concurrency: 1, blockedSites: ['review.example'] }))
+    expect(h.reads).not.toContain(PRO)
+    expect(result.sources.map((note) => note.url)).toEqual([CON])
+    expect(result.discarded.find((entry) => entry.url === PRO)?.reason).toContain('blocked list')
+  })
+
+  it('blocks a blocked site by suffix, so a subdomain is shut too', async () => {
+    const { h, input } = setup({ hits: [{ url: 'https://deep.review.example/x', title: 'Off-site', snippet: 's' }] })
+    const result = await runResearch(input({ concurrency: 1, blockedSites: ['review.example'] }))
+    expect(h.reads).toEqual([])
+    expect(result.discarded.map((entry) => entry.url)).toContain('https://deep.review.example/x')
+  })
 })
 
 describe('runResearch with a model', () => {
