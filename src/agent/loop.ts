@@ -8,6 +8,7 @@ import { decide } from '@/safety/modePolicy'
 import { ActionQueue } from './queue'
 import { compactHistory, estimateMessagesTokens } from './compact'
 import { findElementInfo, riskElementOf } from './elementLines'
+import type { ElementLineInfo } from './elementLines'
 
 import type { ModelConfig } from '@/llm/config'
 import type { ChatMessage, CompletionRequest, CompletionResult, TokenUsage } from '@/llm/types'
@@ -16,7 +17,7 @@ import type { AgentMode } from '@/types/agent'
 import type { TaskEvent } from '@/types/task'
 import type { MemoryAccess, ToolContext, ToolHost, TabOps, VaultAccess } from '@/tools/types'
 import type { ToolRegistry } from '@/tools/registry'
-import type { RiskLevel } from '@/safety/risk'
+import type { RiskAssessment, RiskLevel } from '@/safety/risk'
 
 /**
  * The two-tier agent loop (spec §5). The big model plans one tool call per
@@ -97,6 +98,29 @@ const ELEMENT_LINE = /^\[\d+\]</
 
 /** Tools that always replace the document, so every index in the old map dies. */
 const NAVIGATION_TOOLS = new Set(['navigate', 'go_back', 'go_forward', 'reload'])
+
+/**
+ * What a person types into a secret box never gets written down. The same
+ * argument object feeds the timeline, the approval card, the audit row and a
+ * saved recipe, and the history export is a plaintext copy of all of them. That
+ * the agent typed *something* into the password field is the evidence; the value
+ * is not.
+ */
+const SECRET_VALUE_KEYS = ['text', 'value', 'content'] as const
+
+function isSecretTarget(element: ElementLineInfo | null, assessment: RiskAssessment): boolean {
+  if (element !== null && element.inputType === 'password') return true
+  return assessment.hardBlock === 'otp' || assessment.hardBlock === 'password-create'
+}
+
+function publicArgs(args: Record<string, unknown>, secret: boolean): Record<string, unknown> {
+  if (!secret) return args
+  const out = { ...args }
+  for (const key of SECRET_VALUE_KEYS) {
+    if (typeof out[key] === 'string') out[key] = '[not shown]'
+  }
+  return out
+}
 
 function summarizeArgs(tool: string, args: Record<string, unknown>): string {
   if (tool === 'click') return `click element ${String(args['index'])}`
@@ -406,8 +430,9 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         ...(where.url === undefined ? {} : { url: where.url }),
       })
       const decision = decide(mode, spec.kind, assessment)
-      const actionSummary = summarizeArgs(call.name, args)
-      hooks.emit({ type: 'action', id: call.id, tool: call.name, args, summary: actionSummary })
+      const shownArgs = publicArgs(args, isSecretTarget(lineInfo, assessment))
+      const actionSummary = summarizeArgs(call.name, shownArgs)
+      hooks.emit({ type: 'action', id: call.id, tool: call.name, args: shownArgs, summary: actionSummary })
 
       if (decision === 'block') {
         const reason = `Blocked by ${mode} mode (${assessment.level} risk).`
@@ -415,7 +440,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         await recordAudit({
           goal,
           tool: call.name,
-          args,
+          args: shownArgs,
           risk: assessment.level,
           hardBlock: assessment.hardBlock,
           decision: 'block',
@@ -430,11 +455,11 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
 
       if (decision === 'require-approval') {
         const id = newId()
-        hooks.emit({ type: 'approval', id, tool: call.name, args, summary: actionSummary, level: assessment.level, reasons: assessment.reasons, hardBlock: assessment.hardBlock })
+        hooks.emit({ type: 'approval', id, tool: call.name, args: shownArgs, summary: actionSummary, level: assessment.level, reasons: assessment.reasons, hardBlock: assessment.hardBlock })
         const approved = await hooks.requestApproval({
           id,
           tool: call.name,
-          args,
+          args: shownArgs,
           summary: actionSummary,
           level: assessment.level,
           reasons: assessment.reasons,
@@ -445,7 +470,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
           await recordAudit({
             goal,
             tool: call.name,
-            args,
+            args: shownArgs,
             risk: assessment.level,
             hardBlock: assessment.hardBlock,
             decision: 'denied',
@@ -490,7 +515,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       await recordAudit({
         goal,
         tool: call.name,
-        args,
+        args: shownArgs,
         risk: assessment.level,
         hardBlock: assessment.hardBlock,
         decision: decision === 'allow' ? 'allow' : 'approved',

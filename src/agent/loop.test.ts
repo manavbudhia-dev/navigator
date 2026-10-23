@@ -216,6 +216,36 @@ describe('runAgentTask', () => {
     expect(acts).toEqual(['click:1'])
   })
 
+  it('keeps a typed secret out of the timeline, the card and the audit', async () => {
+    vi.mocked(recordAudit).mockClear()
+    const { promise, events, approvals, acts } = run(
+      [
+        toolCall('read_page', {}),
+        toolCall('type_text', { index: 2, text: 'hunter2' }),
+        toolCall('finish', { success: true, summary: 'ok' }),
+      ],
+      'copilot',
+      true,
+    )
+    await promise
+
+    expect(approvals).toHaveLength(1)
+    expect(approvals[0]!.summary).toContain('[not shown]')
+    expect(approvals[0]!.summary).not.toContain('hunter2')
+    expect(JSON.stringify(approvals[0]!.args)).not.toContain('hunter2')
+
+    const action = events.find((e): e is Extract<TaskEvent, { type: 'action' }> => e.type === 'action' && e.tool === 'type_text')
+    expect(action).toBeDefined()
+    expect(action!.summary).toContain('[not shown]')
+    expect(JSON.stringify(action!.args)).not.toContain('hunter2')
+
+    // The real value still reaches the page, only the copies are censored.
+    expect(acts).toEqual(['type:2'])
+    const rows = auditRows()
+    expect(rows.length).toBeGreaterThan(0)
+    expect(JSON.stringify(rows)).not.toContain('hunter2')
+  })
+
   it('feeds a denial back to the model and does not execute', async () => {
     const { promise, acts, fn } = run(
       [toolCall('click', { index: 1 }), toolCall('finish', { success: false, summary: 'user said no' })],

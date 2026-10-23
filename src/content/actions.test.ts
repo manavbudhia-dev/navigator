@@ -234,6 +234,31 @@ describe('drag_and_drop', () => {
   })
 })
 
+describe('type', () => {
+  it('keeps a secret out of the detail line but types it anyway', () => {
+    setup('<input id="pw" type="password" name="password" />')
+    const field = document.getElementById('pw') as HTMLInputElement
+
+    const result = performAct({ type: 'type', index: indexOfId('pw'), text: 'hunter2' })
+    expect(result.ok).toBe(true)
+    expect(field.value).toBe('hunter2')
+    expect(said(result)).toContain('7 characters (not shown)')
+    expect(said(result)).not.toContain('hunter2')
+  })
+
+  it('names a credential-shaped field even when the input type says otherwise', () => {
+    setup('<input id="otp" type="text" name="one_time_code" />')
+    const result = performAct({ type: 'type', index: indexOfId('otp'), text: '482913' })
+    expect(said(result)).toContain('6 characters (not shown)')
+  })
+
+  it('quotes an ordinary value', () => {
+    setup('<input id="city" type="text" name="city" />')
+    const result = performAct({ type: 'type', index: indexOfId('city'), text: 'Mumbai' })
+    expect(said(result)).toContain('"Mumbai"')
+  })
+})
+
 describe('stale indices', () => {
   it('asks for a re-read instead of acting on nothing', () => {
     setup('<span id="pointer" style="cursor: pointer">Looks clickable</span>')

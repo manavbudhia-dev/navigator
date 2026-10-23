@@ -73,6 +73,20 @@ function setNativeValue(input: HTMLInputElement | HTMLTextAreaElement, value: st
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+/**
+ * How a typed value may be described in a log line. The detail string goes into
+ * the timeline, the audit row and the model's transcript, so a secret keeps its
+ * length and loses its content — the same way the keyboard fallback already
+ * reports it.
+ */
+function typedWhat(el: Element, text: string): string {
+  const name = `${el.getAttribute('name') ?? ''} ${el.getAttribute('id') ?? ''} ${el.getAttribute('aria-label') ?? ''}`
+  const secret =
+    (el instanceof HTMLInputElement && (el.type === 'password' || el.autocomplete === 'one-time-code')) ||
+    /pass|secret|otp|one.?time|verification.?code|cvv|card/i.test(name)
+  return secret ? `${text.length} characters (not shown)` : `"${text}"`
+}
+
 function doType(index: number, text: string, submit: boolean): ActResult {
   const el = findElement(index)
   if (!el) return { ok: false, error: `No element with index ${index}. Re-read the page.` }
@@ -111,11 +125,11 @@ function doType(index: number, text: string, submit: boolean): ActResult {
     target.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     return {
       ok: true,
-      detail: `Typed "${text}" into ${labelOf(el)} and submitted the form.`,
+      detail: `Typed ${typedWhat(target, text)} into ${labelOf(el)} and submitted the form.`,
       target: targetOf(el),
     }
   }
-  return { ok: true, detail: `Typed "${text}" into ${labelOf(el)}.`, target: targetOf(el) }
+  return { ok: true, detail: `Typed ${typedWhat(target, text)} into ${labelOf(el)}.`, target: targetOf(el) }
 }
 
 function doScroll(direction: 'down' | 'up', amount: number, index?: number): ActResult {
