@@ -142,7 +142,7 @@ function run(
   turns: CompletionResult[],
   mode: AgentMode,
   approve = true,
-  evidence: { runId?: string; probe?: AuditProbe; tools?: ToolSpec[] } = {},
+  evidence: { runId?: string; probe?: AuditProbe; tools?: ToolSpec[]; autoAllow?: readonly string[] } = {},
 ) {
   const { host, acts } = makeHost()
   const { hooks, events, approvals, questions } = makeHooks(approve)
@@ -214,6 +214,34 @@ describe('runAgentTask', () => {
     expect(approvals).toHaveLength(1)
     expect(approvals[0]!.tool).toBe('click')
     expect(acts).toEqual(['click:1'])
+  })
+
+  it('auto mode asks first on a site the user has not allowed', async () => {
+    const probe: AuditProbe = { url: async () => 'https://other.test/cart', thumb: async () => null }
+    const { promise, approvals, acts } = run(
+      [toolCall('read_page', {}), toolCall('click', { index: 0 }), toolCall('finish', { success: true, summary: 'ok' })],
+      'auto',
+      true,
+      { probe, autoAllow: ['shop.test'] },
+    )
+    const outcome = await promise
+    expect(outcome.success).toBe(true)
+    expect(approvals).toHaveLength(1)
+    expect(approvals[0]!.reasons.join(' ')).toContain('other.test')
+    expect(acts).toEqual(['click:0'])
+  })
+
+  it('auto mode acts alone on an allowed site, and on anything under it', async () => {
+    const probe: AuditProbe = { url: async () => 'https://eu.shop.test/orders', thumb: async () => null }
+    const { promise, approvals, acts } = run(
+      [toolCall('read_page', {}), toolCall('click', { index: 0 }), toolCall('finish', { success: true, summary: 'ok' })],
+      'auto',
+      true,
+      { probe, autoAllow: ['shop.test'] },
+    )
+    await promise
+    expect(approvals).toHaveLength(0)
+    expect(acts).toEqual(['click:0'])
   })
 
   it('keeps a typed secret out of the timeline, the card and the audit', async () => {

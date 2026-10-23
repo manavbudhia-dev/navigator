@@ -1,9 +1,10 @@
 import { complete } from '@/llm'
 import { buildSystemPrompt } from '@/prompts/system'
 import { sanitizeUntrusted } from '@/prompts/sanitize'
+import { siteFor } from '@/safety/allowlist'
 import { recordAudit } from '@/safety/audit'
 import { assessRisk } from '@/safety/risk'
-import { decide } from '@/safety/modePolicy'
+import { autoSiteReason, decide } from '@/safety/modePolicy'
 
 import { ActionQueue } from './queue'
 import { compactHistory, estimateMessagesTokens } from './compact'
@@ -87,6 +88,8 @@ export interface AgentRunOptions {
   memory?: MemoryAccess
   /** Shared by every audit row this run writes (spec §9). */
   runId?: string
+  /** Hosts Auto mode may act on alone (spec §9). Empty means it asks everywhere. */
+  autoAllow?: readonly string[]
   /** Where the action happened and what it looked like afterwards (spec §9). */
   probe?: AuditProbe
   maxSteps?: number
@@ -201,6 +204,7 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
   const completeFn: CompleteFn = options.completeFn ?? complete
   const newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10))
   const maxSteps = options.maxSteps ?? 40
+  const autoAllow = options.autoAllow ?? []
   const probe = options.probe
   const readUrl = probe === undefined ? null : (): Promise<string | null> => probe.url()
   const readThumb = probe === undefined ? null : (): Promise<string | null> => probe.thumb()
@@ -419,8 +423,6 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
       }
       // Read before the action: a click or navigate is about to change it, and
       // the URL is what the payment and OTP hard blocks match against.
-      // Read before the action: a click or navigate is about to change it, and
-      // the URL is what the payment and OTP hard blocks match against.
       const where = await evidence()
       const lineInfo = indexArg === null || pageLines === null ? null : findElementInfo(pageLines, indexArg)
       const assessment = assessRisk({
@@ -429,7 +431,10 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
         element: lineInfo === null ? null : riskElementOf(lineInfo),
         ...(where.url === undefined ? {} : { url: where.url }),
       })
-      const decision = decide(mode, spec.kind, assessment)
+      const site = siteFor(where.url, autoAllow)
+      const decision = decide(mode, spec.kind, assessment, site)
+      const siteReason = decision === 'require-approval' ? autoSiteReason(mode, site) : null
+      const reasons = siteReason === null ? assessment.reasons : [...assessment.reasons, siteReason]
       const shownArgs = publicArgs(args, isSecretTarget(lineInfo, assessment))
       const actionSummary = summarizeArgs(call.name, shownArgs)
       hooks.emit({ type: 'action', id: call.id, tool: call.name, args: shownArgs, summary: actionSummary })
@@ -455,14 +460,14 @@ export async function runAgentTask(options: AgentRunOptions): Promise<AgentOutco
 
       if (decision === 'require-approval') {
         const id = newId()
-        hooks.emit({ type: 'approval', id, tool: call.name, args: shownArgs, summary: actionSummary, level: assessment.level, reasons: assessment.reasons, hardBlock: assessment.hardBlock })
+        hooks.emit({ type: 'approval', id, tool: call.name, args: shownArgs, summary: actionSummary, level: assessment.level, reasons, hardBlock: assessment.hardBlock })
         const approved = await hooks.requestApproval({
           id,
           tool: call.name,
           args: shownArgs,
           summary: actionSummary,
           level: assessment.level,
-          reasons: assessment.reasons,
+          reasons,
           hardBlock: assessment.hardBlock,
         })
         hooks.emit({ type: 'approval-resolved', id, approved })

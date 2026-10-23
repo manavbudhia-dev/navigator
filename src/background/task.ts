@@ -1,5 +1,6 @@
 import { runAgentTask } from '@/agent/loop'
 import { loadModelConfig } from '@/llm/config'
+import { loadAllowlist } from '@/safety/allowlistStore'
 import { coreTools } from '@/tools/definitions'
 import { dataTools } from '@/tools/dataTools'
 import { tabTools } from '@/tools/tabTools'
@@ -60,9 +61,13 @@ export function isTaskRunning(): boolean {
 
 export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: boolean; error?: string }> {
   let config: Awaited<ReturnType<typeof loadModelConfig>>
+  let autoAllow: string[]
   let tabId: number
   try {
     config = await loadModelConfig()
+    // A settings read that fails must not stop the task; an empty list means
+    // Auto mode asks everywhere, which is the safe direction.
+    autoAllow = await loadAllowlist().catch(() => [])
     tabId = await getActiveTabId()
   } catch (error) {
     // Nothing was started, so nothing here may touch the run that does own
@@ -95,6 +100,7 @@ export async function startTask(goal: string, mode: AgentMode): Promise<{ ok: bo
       tabs: await createTabOps(),
       memory: memoryApi,
       runId,
+      autoAllow,
       probe: createAuditProbe(tabId),
     })
       .then((outcome) => {

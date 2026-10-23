@@ -6,9 +6,11 @@ import { healGoal } from '@/prompts/recipes'
 import { replayRecipe, startUrl } from '@/recipes/replay'
 import { nextSlot, periodInMinutes } from '@/recipes/schedule'
 import { getRecipe, listRecipes, saveRecipe } from '@/recipes/store'
+import { siteFor } from '@/safety/allowlist'
+import { loadAllowlist } from '@/safety/allowlistStore'
 import { recordAudit } from '@/safety/audit'
 import { assessRisk } from '@/safety/risk'
-import { decide } from '@/safety/modePolicy'
+import { autoSiteReason, decide } from '@/safety/modePolicy'
 import { coreTools } from '@/tools/definitions'
 import { dataTools } from '@/tools/dataTools'
 import { tabTools } from '@/tools/tabTools'
@@ -107,6 +109,9 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
   if (recipe === null) throw new Error('No saved recipe with that id.')
 
   const config = await loadModelConfig()
+  // A settings read that fails degrades to asking on every site, which is the
+  // safe direction, and never to acting alone somewhere the user never allowed.
+  const allowlist = await loadAllowlist().catch(() => [])
   const host = createToolHost()
   const registry = new ToolRegistry([...coreTools(), ...tabTools(), ...dataTools()])
   const run = beginRun(`recipe "${recipe.name}"`)
@@ -195,7 +200,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
 
   const permit = async (step: RecipeStep, index: number | null): Promise<boolean> => {
     const { kind, assessment } = riskFor(step, registry, index, liveLines, pageUrl)
-    const decision = decide(options.mode, kind, assessment)
+    const decision = decide(options.mode, kind, assessment, siteFor(pageUrl, allowlist))
     if (decision === 'allow') return true
 
     if (decision === 'block') {
@@ -211,16 +216,18 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
 
     const id = crypto.randomUUID()
     const summary = step.note === '' ? step.tool : step.note
+    const siteReason = autoSiteReason(options.mode, siteFor(pageUrl, allowlist))
+    const reasons = siteReason === null ? assessment.reasons : [...assessment.reasons, siteReason]
     // The agent loop emits its own approval cards; a replay is not a loop, so
     // the card has to be put on the wire from here.
-    broadcast({ type: 'approval', id, tool: step.tool, args: step.args, summary, level: assessment.level, reasons: assessment.reasons, hardBlock: assessment.hardBlock })
+    broadcast({ type: 'approval', id, tool: step.tool, args: step.args, summary, level: assessment.level, reasons, hardBlock: assessment.hardBlock })
     const approved = await hooks.requestApproval({
       id,
       tool: step.tool,
       args: step.args,
       summary,
       level: assessment.level,
-      reasons: assessment.reasons,
+      reasons,
       hardBlock: assessment.hardBlock,
     })
     broadcast({ type: 'approval-resolved', id, approved })
@@ -250,6 +257,7 @@ export async function runRecipeNow(options: RecipeRunOptions): Promise<RecipeRun
       vault,
       tabs: tabOps,
       runId,
+      autoAllow: allowlist,
       maxSteps: HEAL_STEPS,
     })
     return outcome.success ? outcome.summary : null
