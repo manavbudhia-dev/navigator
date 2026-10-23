@@ -30,7 +30,16 @@ let cached: Promise<Pricing | null> | null = null
 
 /** A panel can render twenty cost chips; the price list is still one read. */
 export function pricingOnce(): Promise<Pricing | null> {
-  cached ??= loadPricing()
+  if (cached === null) {
+    const attempt = loadPricing().catch((error: unknown) => {
+      // A read that threw must not stay the answer for the rest of the
+      // session: drop the cache so the next panel to mount retries.
+      if (cached === attempt) cached = null
+      console.warn('[navigator] pricing read failed', error)
+      return null
+    })
+    cached = attempt
+  }
   return cached
 }
 

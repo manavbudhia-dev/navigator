@@ -1,14 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   costLabel,
   costOf,
+  forgetPricing,
   formatCost,
+  pricingOnce,
   STEP_MS_TARGET,
   summarizeRun,
   type Pricing,
 } from './cost'
+import { db } from './db'
+
 import type { AuditRow } from './db'
+
+vi.mock('./db', () => ({ db: { settings: { get: vi.fn() } } }))
 
 const DOLLAR: Pricing = { symbol: '$', inputPerMillion: 2, outputPerMillion: 8 }
 const RUPEE: Pricing = { symbol: '₹', inputPerMillion: 100, outputPerMillion: 400 }
@@ -101,5 +107,41 @@ describe('summarizeRun', () => {
       cost: 0,
       over: [],
     })
+  })
+})
+
+describe('pricingOnce', () => {
+  const STORED = { key: 'pricing', value: { symbol: '$', inputPerMillion: 2, outputPerMillion: 8 } }
+
+  afterEach(() => {
+    forgetPricing()
+    vi.mocked(db.settings.get).mockReset()
+    vi.restoreAllMocks()
+  })
+
+  it('reads the price list once, however many chips ask for it', async () => {
+    vi.mocked(db.settings.get).mockResolvedValue(STORED)
+    const first = await pricingOnce()
+    const second = await pricingOnce()
+    expect(first).toMatchObject({ symbol: '$' })
+    expect(second).toBe(first)
+    expect(db.settings.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('tries again after a read that threw instead of caching the failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.mocked(db.settings.get).mockRejectedValueOnce(new Error('IndexedDB is closed'))
+    expect(await pricingOnce()).toBeNull()
+
+    vi.mocked(db.settings.get).mockResolvedValue(STORED)
+    expect(await pricingOnce()).toMatchObject({ symbol: '$' })
+    expect(warn).toHaveBeenCalledOnce()
+  })
+
+  it('caches "no price stored" rather than re-reading it', async () => {
+    vi.mocked(db.settings.get).mockResolvedValue(undefined)
+    expect(await pricingOnce()).toBeNull()
+    expect(await pricingOnce()).toBeNull()
+    expect(db.settings.get).toHaveBeenCalledTimes(1)
   })
 })

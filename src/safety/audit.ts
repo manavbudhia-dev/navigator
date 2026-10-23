@@ -26,11 +26,25 @@ export interface AuditInput {
   target?: ActTarget
 }
 
+/**
+ * How much history is kept. Rows carry a JPEG thumbnail each, so an unbounded
+ * log would quietly eat the disk; the oldest rows go first and a run is one
+ * contiguous group, so a trim only ever clips the tail of an old session.
+ */
+export const AUDIT_MAX_ROWS = 2_000
+
+/** Same shape as the other local stores' caps: keep the newest rows, drop the rest. */
+async function trim(): Promise<void> {
+  const past = await db.audit.orderBy('at').reverse().offset(AUDIT_MAX_ROWS).primaryKeys()
+  if (past.length > 0) await db.audit.bulkDelete(past as number[])
+}
+
 export async function recordAudit(input: AuditInput, persist = true): Promise<AuditRow> {
   const row: AuditRow = { at: Date.now(), ...input }
   if (persist) {
     try {
       await db.audit.add(row)
+      await trim()
     } catch (error) {
       // A failed write must never abort a running task.
       console.warn('[navigator] audit write failed', error)

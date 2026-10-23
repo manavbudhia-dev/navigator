@@ -26,6 +26,9 @@ const PROVIDERS: Array<{ id: ProviderId; label: string }> = [
   { id: 'gemini', label: 'Gemini' },
 ]
 
+/** How long the connection test waits before it calls the endpoint dead. */
+const CONNECT_TEST_TIMEOUT_MS = 15_000
+
 /**
  * The theme lives in App, not here: the command palette changes it too, and it
  * is persisted, so two owners would disagree the moment the panel reopens.
@@ -37,10 +40,25 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
   const [price, setPrice] = useState({ symbol: '', input: '', output: '' })
   const [hasPrice, setHasPrice] = useState(false)
   const [priceError, setPriceError] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    void loadModelConfig().then(setConfig)
-  }, [])
+    let alive = true
+    setLoadFailed(false)
+    void loadModelConfig()
+      .then((value) => {
+        if (alive) setConfig(value)
+      })
+      .catch(() => {
+        // Without this the panel would sit on "Loading settings…" forever,
+        // because a rejected read never calls setConfig.
+        if (alive) setLoadFailed(true)
+      })
+    return () => {
+      alive = false
+    }
+  }, [reloadKey])
 
   useEffect(() => {
     void loadPricing()
@@ -102,6 +120,10 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
   async function handleTest() {
     if (!config) return
     setTest({ status: 'testing' })
+    // A hung provider would otherwise leave the button spinning for the rest
+    // of the panel's life, with no way to tell a slow endpoint from a dead one.
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), CONNECT_TEST_TIMEOUT_MS)
     try {
       const result = await complete(
         {
@@ -109,7 +131,7 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
           maxTokens: 8,
         },
         config,
-        { kind: 'small' },
+        { kind: 'small', signal: controller.signal },
       )
       const reply = (result.message.content ?? '').trim()
       setTest({
@@ -119,8 +141,14 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
     } catch (error) {
       setTest({
         status: 'error',
-        message: error instanceof Error ? error.message : 'Connection failed.',
+        message: controller.signal.aborted
+          ? `No answer within ${CONNECT_TEST_TIMEOUT_MS / 1000} seconds. Check the base URL, the key and the model name.`
+          : error instanceof Error
+            ? error.message
+            : 'Connection failed.',
       })
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -158,7 +186,12 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
   }
 
   async function handleClearPrice() {
-    await clearPricing()
+    try {
+      await clearPricing()
+    } catch (error) {
+      setPriceError(error instanceof Error ? error.message : 'Could not clear the price.')
+      return
+    }
     setPrice({ symbol: '', input: '', output: '' })
     setHasPrice(false)
     setPriceError(null)
@@ -166,9 +199,25 @@ export function SettingsPanel({ theme, onTheme }: { theme: Theme; onTheme: (them
 
   if (!config) {
     return (
-      <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-        Loading settings…
+      <div className="flex flex-col items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+        {loadFailed ? (
+          <>
+            <XCircle className="size-4 text-destructive" aria-hidden />
+            <p className="text-center">Navigator could not read its settings from this browser.</p>
+            <button
+              type="button"
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+              onClick={() => setReloadKey((k) => k + 1)}
+            >
+              Try again
+            </button>
+          </>
+        ) : (
+          <>
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Loading settings…
+          </>
+        )}
       </div>
     )
   }
