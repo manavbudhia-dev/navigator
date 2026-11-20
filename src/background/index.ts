@@ -159,8 +159,26 @@ async function forwardToActiveTab(message: BackgroundMessage): Promise<Backgroun
   return response
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+/**
+ * Only the extension's own pages (the side panel) talk to the service worker. Content scripts run on
+ * every site, in a renderer the page shares, so a message that arrives from one is treated as
+ * untrusted: otherwise a compromised page renderer could unlock the vault, add itself to the site
+ * allowlist, start a task or approve a pending risky action on the user's behalf.
+ */
+function isTrustedSender(sender: chrome.runtime.MessageSender): boolean {
+  if (sender.id !== chrome.runtime.id) return false
+  // A content script's sender.url is the web page it runs in; only extension pages carry our origin
+  // (the panel may also be opened as a tab, so sender.tab alone is not the test).
+  const origin = chrome.runtime.getURL('')
+  return typeof sender.url === 'string' && sender.url.startsWith(origin)
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isBackgroundMessage(message)) return false
+  if (!isTrustedSender(sender)) {
+    sendResponse({ ok: false, error: 'Refused: messages are only accepted from the extension itself.' } satisfies BackgroundResponse)
+    return false
+  }
 
   if (message.kind === 'run-task') {
     startTask(message.goal, message.mode)
